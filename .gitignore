@@ -1,0 +1,77 @@
+# ----------------------
+# Python cache
+# ----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pdb
+*.so
+*.egg-info/
+.eggs/
+
+# ----------------------
+# Virtual environments
+# ----------------------
+venv/
+.venv/
+env/
+ENV/
+
+# ----------------------
+# Alembic cache
+# ----------------------
+alembic/versions/__pycache__/
+alembic/versions/*.pyc
+
+# ----------------------
+# Environment files
+# ----------------------
+.env
+*.env
+
+# ----------------------
+# Logs and coverage
+# ----------------------
+*.log
+*.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/
+.tox/
+
+# ----------------------
+# Editors/IDEs
+# ----------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ----------------------
+# OS files
+# ----------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------
+# Jupyter Notebooks
+# ----------------------
+.ipynb_checkpoints/
+
+# ----------------------
+# Distribution / builds
+# ----------------------
+dist/
+build/
+*.egg
+*.whl
+
+# ----------------------
+# Type checking
+# ----------------------
+.mypy_cache/
+.pyright/
+
