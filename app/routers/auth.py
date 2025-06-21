@@ -41,30 +41,11 @@ async def get_current_user(user : UserOut =Depends(decode_user), db: Session = D
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return user
 
-@router.get("/users/{user_id}", response_model=UserOut, status_code=status.HTTP_200_OK)
-async def get_user(user_id: int, db: Session = Depends(get_db)):
-    auth_service = AuthService(db_session=db)
-    user = db.query(User).filter(User.id == user_id).first()
-    
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    
-    return UserOut(id=user.id, email=user.email)
-
-@router.get("/users/", response_model=list[UserOut], status_code=status.HTTP_200_OK)
-async def get_all_users(db: Session = Depends(get_db)):
-    auth_service = AuthService(db_session=db)
-    users = db.query(User).all()
-    
-    if not users:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No users found")
-    
-    return [UserOut(id=user.id, email=user.email) for user in users]
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, db: Session = Depends(get_db)):
+async def delete_user(user : UserOut =Depends(decode_user),db: Session = Depends(get_db)):
     auth_service = AuthService(db_session=db)
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == user.id).first()
     
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -73,10 +54,11 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"detail": "User deleted successfully"}
 
-@router.put("/users/{user_id}", response_model=UserOut, status_code=status.HTTP_200_OK)
-async def update_user(user_id: int, user_update: UserCreate, db: Session = Depends(get_db)):
+
+@router.put("/users/me", response_model=UserOut, status_code=status.HTTP_200_OK)
+async def update_user(user_update: UserCreate, user : UserOut =Depends(decode_user), db: Session = Depends(get_db)):
     auth_service = AuthService(db_session=db)
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == user.id).first()
     
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

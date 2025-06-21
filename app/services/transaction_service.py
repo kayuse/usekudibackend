@@ -23,7 +23,7 @@ class TransactionService:
     def get_transaction(self, transaction_id: int):
         return self.db.query(Transaction).filter(Transaction.id == transaction_id).first()
     
-    def index_transactions(self, account_id : int) -> bool:
+    def index_transactions(self, account_id : int, start_from : datetime = None) -> bool:
         # Fetch the account from the database
         account = self.db.query(Account).filter(Account.id == account_id).first()
         if not account:
@@ -35,9 +35,12 @@ class TransactionService:
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-        start_date = datetime.now() - relativedelta(months=3)
+        
+        if not start_from:
+            start_from = datetime.now() - relativedelta(months=3)
+        
         response = requests.get(
-            f"{self.mono_api_base_url}/accounts/{account.account_id}/transactions?start_date={start_date.strftime('%Y-%m-%d')}&paginate=false",
+            f"{self.mono_api_base_url}/accounts/{account.account_id}/transactions?start_date={start_from.strftime('%Y-%m-%d')}&paginate=false",
             headers=headers
         )
         print(f"Fetching transactions for account: {account.account_number}")
@@ -71,9 +74,30 @@ class TransactionService:
         account.active = True  # Optionally set the account as active
         self.db.commit()
         return True
+    
+    def sync_transactions(self, account_id: int) -> bool:
+        account = self.db.query(Account).filter(Account.id == account_id).first()
+        if not account:
+            print(f"Account with ID {account_id} not found.")
+            return False
+        #if last synced is less than today, index transactions
+        if account.last_synced and account.last_synced >= datetime.now() - relativedelta(days=1):
+            print(f"Account with ID {account_id} is already synced within the last 24 hours.")
+            return True
+        
+        print(f"Account with ID {account_id} is not indexed. Indexing now...")
+        return self.index_transactions(account_id, start_from=account.last_synced or datetime.now() - relativedelta(months=3))
+        
+        
+    def get_account_transactions(self, account_id: int, skip: int = 0, limit: int = 100):
+        account = self.db.query(Account).filter(Account.id == account_id).first()
+        if not account:
+            return None
+        return self.db.query(Transaction).filter(Transaction.account_id == account_id).offset(skip).limit(limit).all()
 
-    def get_transactions(self, skip: int = 0, limit: int = 100):
-        return self.db.query(Transaction).offset(skip).limit(limit).all()
+    def get_transactions(self, user_id : int, skip: int = 0, limit: int = 100) -> list[Transaction]:
+        transactions = self.db.query(Transaction).join(Account).filter(Account.user_id == user_id).offset(skip).limit(limit).all()
+        return transactions
 
     def create_transaction(self, transaction: AccountCreate):
         db_transaction = Transaction(**transaction.dict())

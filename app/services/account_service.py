@@ -5,10 +5,12 @@ from uuid import uuid4
 from dotenv import load_dotenv
 import requests
 
+from app.data.mono import MonoAuthResponse
+from app.services.mono_service import MonoService
 from app.workers.tasks import fetch_initial_transactions
 
 
-from app.data.account import AccountCreate, AccountExchangeCreate, AccountExchangeOut, AccountOut, MonoAuthResponse
+from app.data.account import AccountCreate, AccountExchangeCreate, AccountExchangeOut, AccountOut, BankOut
 from app.data.user import UserOut
 from sqlalchemy.orm import Session
 from app.models.account import Account, Bank, FetchMethod
@@ -23,6 +25,7 @@ class AccountService:
         self.mono_api_key = os.getenv('MONO_API_KEY')
         self.mono_api_secret = os.getenv('MONO_API_SECRET')
         self.mono_api_base_url = os.getenv('MONO_API_BASE_URL')
+        self.mono_service = MonoService()
         self.accounts = {}  # account_id -> Account
 
     def create_account(self, user: UserOut, account: AccountCreate) -> AccountOut:
@@ -50,11 +53,49 @@ class AccountService:
             account_name=account.account_name,
             account_number=account.account_number,
             active=account.active,
-            id=account.id  # Assuming id is the primary key in Account model
+            id=account.id , # Assuming id is the primary key in Account model
+            current_balance=account.current_balance,
+            currency=account.currency,
+            bank_id=account.bank_id,
+            bank=BankOut(
+                bank_id=account.bank.id,
+                bank_name=account.bank.bank_name,
+                image_url=account.bank.image_url
+            ),
+            account_type=account.account_type
         )
 
     def get_banks(self) -> List[Bank]:
         return self.db.query(Bank).all()
+    
+    def refresh_balance(self, id: str) -> AccountOut:
+        account = self.db.query(Account).filter(Account.id == id).first()
+        if not account:
+            raise ValueError("Account not found.")
+        
+        data = self.mono_service.fetch_account_balance(account.account_id)
+        
+        if data.status == "successful":
+            account.current_balance = data.data.balance
+            account.currency = data.data.currency
+            self.db.commit()
+            self.db.refresh(account)
+        
+        return AccountOut(
+                id=account.id,
+                account_name=account.account_name,
+                account_number=account.account_number,
+                account_id=account.account_id,
+                active=account.active,
+                bank_id=account.bank_id,
+                bank=BankOut(
+                    bank_id=account.bank.id,
+                    bank_name=account.bank.bank_name,
+                    image_url=account.bank.image_url
+                ),
+                current_balance=account.current_balance,
+                currency=account.currency
+        )
     
     def establish_exchange(self, data : AccountExchangeCreate) -> AccountExchangeOut:
         try:
@@ -85,7 +126,7 @@ class AccountService:
             account.active = True
             self.db.commit()
             self.db.refresh(account)
-
+            self.refresh_balance(account.id)  # Refresh the balance after establishing exchange
             fetch_initial_transactions.delay(account.id)  # Call the worker to fetch initial transactions
             return AccountExchangeOut(
                 id=account.id,
@@ -94,14 +135,93 @@ class AccountService:
         except Exception as e:
             raise ValueError(f"Error establishing exchange: {str(e)}")
         
-    def get_accounts_by_user(self, user_id: str) -> List[Account]:
-        return [acc for acc in self.accounts.values() if acc.user_id == user_id]
+    def get_accounts_by_user(self, user_id: str) -> List[AccountOut]:
+        try:
+            accounts = self.db.query(Account).join(Account.bank).filter(Account.user_id == user_id).all()
+            return [AccountOut(
+                id=account.id,
+                account_name=account.account_name,
+                account_number=account.account_number,
+                account_id=account.account_id,
+                active=account.active,
+                current_balance=account.current_balance,
+                bank_id=account.bank_id,
+                bank=BankOut(
+                    bank_id=account.bank.id,
+                    bank_name=account.bank.bank_name,
+                    image_url=account.bank.image_url
+                ),
+                currency=account.currency,
+                account_type=account.account_type
+            ) for account in accounts]
+        except Exception as e:
+            raise ValueError(f"Error fetching accounts: {str(e)}")
+        
 
-    def delete_account(self, account_id: str) -> bool:
-        if account_id in self.accounts:
-            del self.accounts[account_id]
-            return True
-        return False
+    def sync_account(self, account_id: str, user_id : str) -> AccountOut:
+        account = self.db.query(Account).filter(Account.id == account_id, Account.user_id == user_id).first()
+        if not account:
+            raise ValueError("Account not found.")
+        if account.account_id is None:
+            raise ValueError("Account is not linked. Please Link your Account first.")
+        # Fetch the latest balance and transactions from Mono
+        data = self.mono_service.fetch_account_balance(account.account_id)
+    
+        if data.status == "successful":
+            account.current_balance = data.data.balance
+            account.currency = data.data.currency
+            self.db.commit()
+            self.db.refresh(account)
+        
+        return AccountOut(
+                id=account.id,
+                account_name=account.account_name,
+                account_number=account.account_number,
+                bank_id=account.bank_id,
+                active=account.active,
+                current_balance=account.current_balance,
+                currency=account.currency
+        )
+    
+    def disable_account(self, account_id: int, user_id : int) -> AccountOut:
+        # Fetch the account from the database
+        account = self.db.query(Account).filter(Account.id == account_id, Account.user_id == user_id).first()
+        if not account:
+            raise ValueError("Account not found.")
+        
+        # Disable the account
+        account.active = False
+        self.db.commit()
+        self.db.refresh(account)
+        
+        return AccountOut(
+            id=account.id,
+            account_name=account.account_name,
+            account_number=account.account_number,
+            active=account.active,
+            current_balance=account.current_balance,
+            currency=account.currency,
+            bank_id=account.bank_id,
+            bank=BankOut(
+                bank_id=account.bank.id,
+                bank_name=account.bank.bank_name,
+                image_url=account.bank.image_url
+            ),
+            account_type=account.account_type
+        )
+        
+        
+    def delete_account(self, account_id: int, user_id : int) -> bool:
+        #delete account from the database
+        print(account_id, user_id )
+        account = self.db.query(Account).filter(Account.id == account_id, Account.user_id == user_id).first()
+        if not account:
+            raise ValueError("Account not found.")
+        # Remove the account from the database
+        self.db.delete(account)
+        self.db.commit()
+        # Remove the account from the in-memory dictionary
+        return True
 
     def set_account_active(self, account_id: str, active: bool) -> bool:
         account = self.accounts.get(account_id)

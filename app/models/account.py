@@ -32,7 +32,7 @@ class Account(Base):
     account_number = Column(String(50), nullable=False, unique=True)
     active = Column(Boolean, nullable=False, default=False)  # 1 for active, 0 for inactive
     account_type = Column(String, nullable=True, default=0.0)
-    account_id = Column(String, nullable=True, default = '')
+    account_id = Column(String, nullable=True, default = '', unique=False)  # Mono account ID, can be null if not applicable
     current_balance = Column(Float, nullable=False, default=0.0)
     indexed = Column(Boolean, nullable=False, default=False)  # Indicates if the account has been indexed
     currency = Column(String(10), nullable=False, default="NGN")
@@ -40,14 +40,24 @@ class Account(Base):
     bank = relationship("Bank", back_populates="accounts", foreign_keys=[bank_id])
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # Assuming a User model exists
     user = relationship(User, back_populates="accounts")  # Assuming a User model exists
-    transactions = relationship("Transaction", back_populates="account")
+    transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
     last_synced = Column(DateTime, nullable=True)  # Last time the account was synced
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     def __repr__(self):
-        return f"<Account(accountid={self.accountid}, account_name='{self.account_name}', account_number='{self.account_number}',bank='{self.bank_id}', active={self.active}, account_type='{self.account_type}', current_balance={self.current_balance}, currency='{self.currency}', fetch_method='{self.fetch_method}')>"
-    
+        return f"<Account(accountid={self.account_id}, account_name='{self.account_name}', account_number='{self.account_number}',bank='{self.bank_id}', active={self.active}, account_type='{self.account_type}', current_balance={self.current_balance}, currency='{self.currency}', fetch_method='{self.fetch_method}')>"
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    description = Column(String(255), nullable=True)
+
+    def __repr__(self):
+        return f"<Category(id={self.id}, name='{self.name}')>"  
 
 #help me with a transaction model with a relationship to the account model
 class Transaction(Base):
@@ -55,6 +65,7 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(Integer,  ForeignKey("accounts.id"),nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)  # Optional category for the transaction
     transaction_id = Column(String(200), nullable=False, unique=True, default='')  # Mono transaction ID
     currency = Column(String(10), nullable=False, default="NGN")
     date = Column(DateTime, nullable=False, default=func.now())  # Transaction date
@@ -62,8 +73,8 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     transaction_type = Column(String(50), nullable=False)  # e.g., 'credit', 'debit'
     description = Column(String(255), nullable=True)
-    
     account = relationship(Account, back_populates="transactions")
+    category = relationship("Category", backref="transactions", foreign_keys=[category_id])
 
     def __repr__(self):
         return f"<Transaction(transactionid={self.transactionid}, accountid={self.accountid}, amount={self.amount})>"
