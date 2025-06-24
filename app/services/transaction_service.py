@@ -47,7 +47,10 @@ class TransactionService:
         if response.status_code != 200:
             print(f"Failed to fetch transactions: {response.status_code} - {response.text}")
             return False
-        transactions_data = response.json().get('data', [])
+        results = response.json()
+        transactions_data = results.get('data', [])
+        if transactions_data is None:
+            return False
         for transaction_data in transactions_data:
             #print transaction_data entirely with all its keys and values
             print(f"Transaction Data: {transaction_data}")
@@ -60,11 +63,11 @@ class TransactionService:
                 new_transaction = Transaction(
                     transaction_id=transaction_data['id'],
                     account_id=account.id,
-                    amount=transaction_data.get('amount', 0.0),
+                    amount=transaction_data.get('amount', 0.0)/100,
                     currency=transaction_data.get('currency', 'NGN'),
-                    description=transaction_data.get('description', ''),
+                    description=transaction_data.get('narration', ''),
                     date=transaction_data['date'],
-                    balance_after_transaction=transaction_data.get('balance', 0.0),
+                    balance_after_transaction=transaction_data.get('balance', 0.0)/100,
                     transaction_type=transaction_data.get('type', 'unknown')
                 )
                 self.db.add(new_transaction)
@@ -72,6 +75,7 @@ class TransactionService:
         print(f"Fetched and indexed transactions for account: {account.account_number}")
         account.indexed = True  # Mark the account as indexed
         account.active = True  # Optionally set the account as active
+        account.last_synced = datetime.now()  # Update last synced time
         self.db.commit()
         return True
     

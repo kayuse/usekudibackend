@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from typing import List, Optional
 from uuid import uuid4
@@ -17,11 +18,10 @@ from app.models.account import Account, Bank, FetchMethod
 
 
 
-load_dotenv()
-
 class AccountService:
     def __init__(self, db_session=Session):
         self.db = db_session
+        load_dotenv(override=True)  # Load environment variables from .env file
         self.mono_api_key = os.getenv('MONO_API_KEY')
         self.mono_api_secret = os.getenv('MONO_API_SECRET')
         self.mono_api_base_url = os.getenv('MONO_API_BASE_URL')
@@ -76,7 +76,7 @@ class AccountService:
         data = self.mono_service.fetch_account_balance(account.account_id)
         
         if data.status == "successful":
-            account.current_balance = data.data.balance
+            account.current_balance = data.data.balance / 100
             account.currency = data.data.currency
             self.db.commit()
             self.db.refresh(account)
@@ -112,6 +112,7 @@ class AccountService:
                 headers=headers,
                 json=payload
             )
+            print(response.status_code, response.text, self.mono_api_secret)
             if response.status_code != 200:
                 raise ValueError(f"Failed to establish exchange: Please try again later")
                 
@@ -168,7 +169,7 @@ class AccountService:
         data = self.mono_service.fetch_account_balance(account.account_id)
     
         if data.status == "successful":
-            account.current_balance = data.data.balance
+            account.current_balance = data.data.balance / 100
             account.currency = data.data.currency
             self.db.commit()
             self.db.refresh(account)
