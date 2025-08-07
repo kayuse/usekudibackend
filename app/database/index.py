@@ -33,10 +33,9 @@ def get_db():
 
 def verify_token(token: str) -> UserOut:
     try:
-        print("Verifying token:", token)  # Debugging line
+     
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("id")
-        print("Decoded payload:", payload)  #
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

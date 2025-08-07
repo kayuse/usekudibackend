@@ -1,9 +1,12 @@
 from celery import Celery
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+from celery.schedules import crontab
+
 load_dotenv()
 
 celery_app = Celery(
@@ -12,4 +15,15 @@ celery_app = Celery(
     backend=os.getenv("REDIS_URL", "redis://localhost:6379/0")
 )
 
+celery_app.conf.timezone = 'Africa/Lagos'
 
+celery_app.conf.beat_schedule = {
+    'auto-classify-transactions-every-10-mins': {
+        'task': 'auto_classify_transactions',
+        'schedule': crontab(minute='*/10'),  # every 10 mins
+    },
+    'generate_transaction_embeddings': {
+        'task': 'generate_transaction_embeddings',
+        'schedule': crontab(minute='*'),  # every minute
+    },
+}

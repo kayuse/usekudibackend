@@ -103,3 +103,11 @@ wrapt==1.16.0
 yarl==1.9.4
 zipp==3.20.1
 opt_einsum==3.4.0
+langchain
+openai
+psycopg2-binary
+python-dotenv
+python-jose
+langchain_openai
+passlib
+bcrypt

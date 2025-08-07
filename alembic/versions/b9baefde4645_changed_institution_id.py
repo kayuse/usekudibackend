@@ -1,8 +1,8 @@
-"""Initial migration
+"""changed institution id
 
-Revision ID: 33256e89be8c
+Revision ID: b9baefde4645
 Revises: 
-Create Date: 2025-06-10 22:17:19.165740
+Create Date: 2025-07-15 21:25:12.129692
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '33256e89be8c'
+revision: str = 'b9baefde4645'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -32,9 +32,20 @@ def upgrade() -> None:
     op.create_table('banks',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('bank_name', sa.String(length=100), nullable=False),
+    sa.Column('institution_id', sa.String(length=100), nullable=True),
+    sa.Column('bank_code', sa.String(length=10), nullable=True),
     sa.Column('image_url', sa.String(length=1255), nullable=True),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('bank_name')
+    sa.UniqueConstraint('bank_code'),
+    sa.UniqueConstraint('bank_name'),
+    sa.UniqueConstraint('institution_id')
+    )
+    op.create_table('categories',
+    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('name', sa.String(length=100), nullable=False),
+    sa.Column('description', sa.String(length=255), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('name')
     )
     op.create_table('users',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -60,10 +71,17 @@ def upgrade() -> None:
     sa.Column('account_number', sa.String(length=50), nullable=False),
     sa.Column('active', sa.Boolean(), nullable=False),
     sa.Column('account_type', sa.String(), nullable=True),
+    sa.Column('account_id', sa.String(), nullable=True),
     sa.Column('current_balance', sa.Float(), nullable=False),
+    sa.Column('indexed', sa.Boolean(), nullable=True),
     sa.Column('currency', sa.String(length=10), nullable=False),
     sa.Column('fetch_method', sa.Enum('SMS', 'EMAIL', 'MONOAPI', name='fetchmethod'), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('last_synced', sa.DateTime(), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['bank_id'], ['banks.id'], ),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('account_number')
     )
@@ -87,11 +105,20 @@ def upgrade() -> None:
     op.create_table('transactions',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('account_id', sa.Integer(), nullable=False),
+    sa.Column('category_id', sa.Integer(), nullable=True),
+    sa.Column('transaction_id', sa.String(length=200), nullable=False),
+    sa.Column('currency', sa.String(length=10), nullable=False),
+    sa.Column('date', sa.DateTime(), nullable=False),
+    sa.Column('balance_after_transaction', sa.Float(), nullable=False),
     sa.Column('amount', sa.Float(), nullable=False),
     sa.Column('transaction_type', sa.String(length=50), nullable=False),
     sa.Column('description', sa.String(length=255), nullable=True),
+    sa.Column('created_at', sa.DateTime(), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['account_id'], ['accounts.id'], ),
-    sa.PrimaryKeyConstraint('id')
+    sa.ForeignKeyConstraint(['category_id'], ['categories.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('transaction_id')
     )
     # ### end Alembic commands ###
 
@@ -105,6 +132,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_users_id'), table_name='users')
     op.drop_index(op.f('ix_users_email'), table_name='users')
     op.drop_table('users')
+    op.drop_table('categories')
     op.drop_table('banks')
     op.drop_table('applications')
     # ### end Alembic commands ###

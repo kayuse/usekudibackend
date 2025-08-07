@@ -9,3 +9,11 @@ class AnalysisRequest(BaseModel):
 class FaceRequest(BaseModel):
     live_image: str
     to_image: str
+
+class StateResponse(BaseModel):
+    state: str
+    onboarded: bool
+    message: str
+
+class AIMessageResponse(BaseModel):
+    message : str

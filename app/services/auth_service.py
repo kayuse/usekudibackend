@@ -44,24 +44,32 @@ class AuthService:
             )
         
     def register_user(self, user_create: UserCreate) -> UserOut:
-        hashed_password = self.hash_password(user_create.password)
-        db_user = User(
+        try:
+            hashed_password = self.hash_password(user_create.password)
+            db_user = User(
             email=user_create.email,
             firstname=user_create.firstname,
+            mobile=user_create.mobile,
             fullname=f"{user_create.firstname} {user_create.lastname}",
             lastname=user_create.lastname,
             username=user_create.email,  # Assuming username is the email
             is_active=True,
             is_superuser=False,  # Default to False, can be changed later
             hashed_password=hashed_password
-        )
-        self.db.add(db_user)
-        self.db.commit()
-        self.db.refresh(db_user)
-        return UserOut(id=db_user.id, email=db_user.email, fullname=db_user.fullname)
+            )
+            self.db.add(db_user)
+            self.db.commit()
+            self.db.refresh(db_user)
+            return UserOut(id=db_user.id, email=db_user.email, fullname=db_user.fullname)
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Error creating user: {str(e)}"
+            )
     
     def authenticate_user(self, email: str, password: str) -> Optional[User]:
-        user = self.db.query(User).filter(User.email == email).first()
+        user = self.db.query(User).filter(User.username == email).first()
         if not user or not self.verify_password(password, user.hashed_password):
             return None
         return user
@@ -103,6 +111,10 @@ class AuthService:
         if user is None:
             raise credentials_exception
         return user
+    
+    def get_mobile_user(self, mobile: str) -> Optional[User]:
+        user = self.db.query(User).filter(User.mobile == mobile).first()
+        return user if user else None
     
     def get_user_by_email(self, email: str) -> Optional[User]:
         user = self.db.query(User).filter(User.email == email).first()

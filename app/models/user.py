@@ -11,7 +11,8 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
+    mobile = Column(String, unique=True, index=True, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=True)
     fullname = Column(String, nullable=False)
     firstname = Column(String, nullable=True)
     lastname = Column(String, nullable=True)
@@ -19,5 +20,6 @@ class User(Base):
     is_superuser = Column(Boolean, default=False)
     hashed_password = Column(String)
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
+    # messages = relationship("Message", back_populates="user_messages", cascade="all, delete-orphan")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

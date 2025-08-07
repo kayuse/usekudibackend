@@ -3,12 +3,14 @@ from typing import Union
 from fastapi import Depends, FastAPI, Request
 from starlette.responses import JSONResponse
 from dotenv import load_dotenv
-load_dotenv() 
+load_dotenv(override=True) 
 
 from .database.index import engine
 from .routers.index import router
 from .routers.auth import router as auth_router
 from .routers.account import router as account_router
+from .routers.transaction import router as transaction_router
+from .routers.message import router as message_router
 from .models import verification
 from .util.errors import CustomError
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +23,8 @@ app = FastAPI()
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(account_router)
+app.include_router(transaction_router)
+app.include_router(message_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins
