@@ -20,6 +20,6 @@ class User(Base):
     is_superuser = Column(Boolean, default=False)
     hashed_password = Column(String)
     accounts = relationship("Account", back_populates="user", cascade="all, delete-orphan")
-    # messages = relationship("Message", back_populates="user_messages", cascade="all, delete-orphan")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+

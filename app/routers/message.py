@@ -26,3 +26,17 @@ async def process_message(request : Request, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No message sent")
     return result
+
+@router.post("/status", response_model=dict, status_code=status.HTTP_200_OK)
+async def process_message(request : Request, db: Session = Depends(get_db)):
+    service = MessageService(db_session=db)
+    body = await request.body()
+    #break body into dictionary
+    body = body.decode('utf-8')
+    body = {k: v for k, v in (x.split('=') for x in body.split('&'))}
+    print(body)
+    
+    result = {'status': 'success', 'message': 'Message processed successfully'}
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No message sent")
+    return result

@@ -1,6 +1,9 @@
 import json
 from random import random
 import string
+
+from langchain.memory import ConversationBufferMemory
+from langchain_community.chat_message_histories import RedisChatMessageHistory
 from langchain_openai import ChatOpenAI
 from requests import Session
 from app.data.ai_models import AIMessageResponse, StateResponse
@@ -12,7 +15,8 @@ from langchain.chains import LLMChain
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
-
+from app.models.user import User
+from app.services.advice_service import AdviceService
 from app.services.auth_service import AuthService
 from app.services.cache_service import get_cache, set_cache
 
@@ -22,22 +26,26 @@ load_dotenv(override=True)
 class AIService:
     def __init__(self, db_session=Session):
         self.open_ai_api_key = os.getenv('CHAT_GPT_KEY')  # Replace with your actual OpenAI API key
-        self.db_session = db_session   
+        self.db_session = db_session
+        self.redis = os.getenv('REDIS_URL')
         self.openai_client = OpenAI(api_key=os.getenv('CHAT_GPT_KEY')) 
+        self.advice_service = AdviceService(db_session=db_session)  # Assuming you have an AdviceService to handle advice-related operations
         self.auth_service = AuthService(db_session=db_session)  # Assuming you have an AuthService to handle user-related operations
 
-    async def process(self, ownerid : str, body : str) -> AIMessageResponse:
+    async def process(self, ownerid: str, body: str) -> AIMessageResponse:
         state = await self.initialize_state(ownerid, message=body)
         if not state.onboarded:
             return AIMessageResponse(
                 message= state.message
             )
-        intent = self.classify_intent(body)
+        user = self.auth_service.get_mobile_user(ownerid)
+        intent = self.classify_intent(body,user)
+        message = self.run_action(intent['action'], user, body)
         print(f"Intent classified: {intent}")
         return AIMessageResponse(
             message=self.generate_response(
                 context=intent['action'],
-                prompt=body
+                prompt=message.message
             ),
         )
     #generate an embedding for the given text using OpenAI's API vector database pgsql
@@ -53,7 +61,7 @@ class AIService:
         )
         return res.data[0].embedding
 
-    def run_action(self, action: str, data: dict) -> AIMessageResponse:
+    def run_action(self, action: str, user : User, prompt : str) -> AIMessageResponse:
         """
         Run the specified action with the provided data.
         This method can be extended to handle different actions.
@@ -68,8 +76,9 @@ class AIService:
             )
         elif action == "transaction":
             # Handle transaction logic here
+            message = self.advice_service.process(user, prompt)
             return AIMessageResponse(
-                message="Transaction processed successfully"
+                message= message
             )
         elif action == "account":
             # Handle account logic here
@@ -89,7 +98,7 @@ class AIService:
         elif action == "error":
             # Handle error logic here
             return AIMessageResponse(
-                message=data.get("error_message", "An error occurred")
+                message='None'
             )
         else:
             return AIMessageResponse(
@@ -290,12 +299,20 @@ class AIService:
         category_id = int(response.strip())
         return category_id
     
-    def classify_intent(self, intent: str) -> dict:
+    def classify_intent(self, intent: str,user : User) -> dict:
         # Placeholder for actual intent classification logic
         # This would typically involve calling an AI model to classify the intent
         response_schemas = [
             ResponseSchema(name="action", description="The action to be taken based on the intent")
         ]
+        chat_history = RedisChatMessageHistory(
+            session_id=f"user_{user.id}",  # This is the actual key in Redis
+            url=self.redis
+        )
+        memory = ConversationBufferMemory(
+            chat_memory=chat_history,
+            memory_key="history"
+        )
         output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
         format_instructions = output_parser.get_format_instructions()
         prompt_template = PromptTemplate(
@@ -303,6 +320,13 @@ class AIService:
             partial_variables={"format_instructions": format_instructions},
             template="""
         You are a personal financial assistant classifying intents.
+        Use the conversation history and user input to decide:
+        
+        Conversation history:
+        {history}
+        
+        Intent: {intent}
+        
         into the following categories:
         - Account Linking: For intents related to linking bank accounts.
         - Transaction: For intents related to transactions data on enquiry on transactions done over time.
@@ -319,11 +343,12 @@ class AIService:
         If the intent is Account Resync, Return{{ "action": "account_resync" }}.
         If the intent is Error, Return{{ "action": "error" }}.
         If the intent is Other, Return{{ "action": "other" }}.
+        
         Do not explain. Just return the classified intent in JSON format.
         return only JSON in this exact format "{format_instructions}"
         """)
         llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
-        chain = LLMChain(llm=llm, prompt=prompt_template)
+        chain = LLMChain(llm=llm, prompt=prompt_template, memory=memory)
         response = chain.run({"intent": intent})
         response_data = output_parser.parse(response)
         return response_data if isinstance(response_data, dict) else {"action": "other"}

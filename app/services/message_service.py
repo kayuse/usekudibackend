@@ -7,6 +7,9 @@ from app.services.auth_service import AuthService  # Import UserService from its
 from twilio.rest import Client
 import os
 from dotenv import load_dotenv
+
+from app.workers.ai_tasks import run_rag
+
 load_dotenv(override=True)  # Load environment variables from .env file
 account_sid = os.getenv('TWILIO_ACCOUNT_SID')
 auth_token = os.getenv('TWILIO_AUTH_TOKEN')
@@ -32,20 +35,7 @@ class MessageService:
         """
         whatsAppMessage = WhatsAppMessage(**body)
         to_number = whatsAppMessage.WaId
-        message = await self.ai_service.process(ownerid=to_number, body=whatsAppMessage.Body)
-        message_response = message.message if message else "Hello! How can I assist you today?"
-        message = self.client.messages.create(
-            from_="whatsapp:+14155238886",   # Twilio sandbox number
-            body= message_response,
-            to=f"whatsapp:+{to_number}"  # Recipient's WhatsApp number
-            )
-        model = Message(
-            content=whatsAppMessage.Body,
-            response=message_response,
-            user_id=1
-        )
-        self.db_session.add(model)
-        self.db_session.commit()
+        run_rag.delay(to_number,whatsAppMessage.Body)
         return {'status': 'success', 'message': 'WhatsApp message processed successfully'}
     def _get_current_timestamp(self):
         from datetime import datetime

@@ -4,6 +4,7 @@ import time
 from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
+from sqlalchemy import text
 from app.data.account import AccountCreate, AccountOut, CategoryOut, TransactionOut, TransactionSearch
 from app.data.mono import MonoInstitutionData
 from app.models.account import Account, Bank, Category, Transaction
@@ -68,7 +69,7 @@ class TransactionService:
         print(f"Upserting transactions for account: {account.account_number}, "
               f"Number of transactions: {len(transactions_data)}")
         for transaction_data in transactions_data:
-            
+
             existing_transaction = self.db.query(Transaction).filter(
                 Transaction.transaction_id == transaction_data['id']).filter(
                 Transaction.account_id == account.id).first()
@@ -77,7 +78,7 @@ class TransactionService:
                 # Update existing transaction
                 continue
             amount = abs((transaction_data.get('amount', 0.0) or 0.0) / 100)
-                # Create a new transaction
+            # Create a new transaction
             new_transaction = Transaction(
                 transaction_id=transaction_data['id'],
                 account_id=account.id,
@@ -110,7 +111,6 @@ class TransactionService:
         print(f"Account with ID {account_id} is not indexed. Indexing now...")
         return self.index_transactions(account_id,
                                        start_from=account.last_synced or datetime.now() - relativedelta(months=3))
-    
 
     def get_account_transactions(self, account_id: int, skip: int = 0, limit: int = 500):
         account = self.db.query(Account).filter(Account.id == account_id).first()
@@ -220,7 +220,7 @@ class TransactionService:
 
     def categorize_transactions(self) -> bool:
         try:
-           
+
             transactions = self.db.query(Transaction).filter(Transaction.category_id.is_(None)).all()
             print(f"Found {len(transactions)} transactions to categorize.")
             categories = self.db.query(Category).all()
@@ -253,59 +253,62 @@ class TransactionService:
         self.db.commit()
         return db_transaction
 
-    async def get_institutions(self) -> list[dict[str,any]]:
+    async def get_institutions(self) -> list[dict[str, any]]:
         data = await cache_service.get_cache('institutions')
         if data:
             data = json.loads(data)
             institutions_data = [MonoInstitutionData(**institution).model_dump() for institution in data]
             return institutions_data
-        
-    
+
         institutions_data = self.mono_service.get_institutions()
         if not institutions_data:
-                print("No institutions found.")
-                return []
-           
-            #get bank with institution id and insert into bank table if not exists
-        result : list[dict[str,any]] = []
+            print("No institutions found.")
+            return []
+
+        # get bank with institution id and insert into bank table if not exists
+        result: list[dict[str, any]] = []
         for institution in institutions_data:
             mono_data = MonoInstitutionData(**institution)
             bank = self.db.query(Bank).filter(Bank.institution_id == mono_data.id).first()
             if not bank:
-                    new_bank = Bank(
-                        institution_id=mono_data.id,
-                        bank_name=mono_data.institution,
-                        bank_code=mono_data.bank_code or '',
-                        bank_account_type=mono_data.type or '',
-                        auth_method=mono_data.auth_methods[0].type or 'internet_banking',
-                        image_url=''
-                    )
-                    self.db.add(new_bank)
-                    self.db.commit()
-                    self.db.refresh(new_bank)
-                    print(f"Inserted new bank: {new_bank.bank_name} with institution ID: {institution['id']}")
+                new_bank = Bank(
+                    institution_id=mono_data.id,
+                    bank_name=mono_data.institution,
+                    bank_code=mono_data.bank_code or '',
+                    bank_account_type=mono_data.type or '',
+                    auth_method=mono_data.auth_methods[0].type or 'internet_banking',
+                    image_url=''
+                )
+                self.db.add(new_bank)
+                self.db.commit()
+                self.db.refresh(new_bank)
+                print(f"Inserted new bank: {new_bank.bank_name} with institution ID: {institution['id']}")
             result.append(mono_data)
         await cache_service.set_cache('institutions', json.dumps(institutions_data), expire_seconds=86400)
-            
+
         return result
 
     def generate_transaction_embeddings(self) -> bool:
-        #categoryid is not none
+        # categoryid is not none
         print("Generating embeddings for transactions...")
-        transactions = self.db.query(Transaction).filter(Transaction.embedding.is_(None) & Transaction.category_id.is_not(None)).all()
+        transactions = self.db.query(Transaction).filter(
+            Transaction.embedding.is_(None) & Transaction.category_id.is_not(None)).all()
         print(f"Found {len(transactions)} transactions to generate embeddings for.")
         if not transactions:
             print(f"No unembedded transactions found.")
             return True
 
         for transaction in transactions:
-            #embed the transaction description category name amount type and date
-            category = self.db.query(Category).filter(Category.id == transaction.category_id).first()
-            if not category:
-                print(f"Category with ID {transaction.category_id} not found for transaction ID {transaction.id}.")
-                continue
+            # embed the transaction description category name amount type and date
+            data = self.db.execute(text(f"SELECT * from data_view where transaction_id={transaction.id}")).fetchone()
+
             # Prepare the text to embed
-            text_to_embed = f"{transaction.description} {category.name} {transaction.amount} {transaction.transaction_type} {transaction.date.strftime('%Y-%m-%d %H:%M:%S')}"
+            text_to_embed = (f"{data.transaction_description.lower()}. "
+                             f"Category: {data.category_name} — {data.category_description}. "
+                             f"Type: {data.transaction_type}. "
+                             f"Date: {data.transaction_date.strftime('%B %d, %Y')}. "
+                             f"From a {data.account_type} account in {transaction.currency}.")
+
             print(f"Generating embedding for transaction ID {transaction.id} with text: {text_to_embed}")
             # Generate embeddings for the transaction description
             embedding = self.ai_service.generate_embedding(text_to_embed)
@@ -313,9 +316,9 @@ class TransactionService:
                 print(f"Failed to generate embedding for transaction ID {transaction.id}.")
                 return False
 
-        # Store the embedding in the database
+            # Store the embedding in the database
             transaction.embedding = embedding
             self.db.commit()
-        
+
         print(f"Generated and stored embedding for transaction ID {transaction.id}.")
         return True

@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Any, Coroutine
 import uuid
 
 from dateutil.relativedelta import relativedelta
@@ -11,8 +11,9 @@ import requests
 from app.data.mono import AccountMonoData, MonoAccountLinkData, MonoAccountLinkResponse, MonoAuthResponse
 from app.services import cache_service
 from app.services.mono_service import MonoService
-from app.workers.transaction_tasks import fetch_initial_transactions,sync_account_transactions
-from app.data.account import AccountCreate, AccountCreateOut, AccountExchangeCreate, AccountExchangeOut, AccountLinkData, AccountOut, BankOut
+from app.workers.transaction_tasks import fetch_initial_transactions, sync_account_transactions
+from app.data.account import AccountCreate, AccountCreateOut, AccountExchangeCreate, AccountExchangeOut, \
+    AccountLinkData, AccountOut, BankOut
 from app.data.user import UserOut
 from sqlalchemy.orm import Session
 from app.models.account import Account, Bank, FetchMethod, Transaction
@@ -28,7 +29,7 @@ class AccountService:
         self.mono_service = MonoService()
         self.accounts = {}  # account_id -> Account
 
-    async def create_account(self, user: UserOut, account: AccountCreate) -> AccountOut:
+    async def create_account(self, user: UserOut, account: AccountCreate) -> AccountCreateOut:
         # check if account already exists using db session
         existing_account = self.db.query(Account).filter(
             Account.account_number == account.account_number and
@@ -46,19 +47,23 @@ class AccountService:
                           fetch_method=FetchMethod(account.fetch_method),
                           user_id=user.id,
                           active=False)
+
         self.db.add(account)
         self.db.commit()
         self.db.refresh(account)
         # Link the account immediately
         link_account_data = AccountLinkData(
-            customer_email= user.email,
+            customer_email=user.email,
             account_id=account.id,
             customer_name=user.fullname,
             institution_auth_method='internet_banking',
-            institution_id= account.bank.institution_id,
+            institution_id=account.bank.institution_id,
             scope='auth')
+
         link_account_response = await self.link_account(link_account_data, user.id)  # Link account immediately
+
         print(f"Link Account Response: {link_account_response}")
+
         return AccountCreateOut(
             account_name=account.account_name,
             account_number=account.account_number,
@@ -75,7 +80,6 @@ class AccountService:
             ),
             account_type=account.account_type
         )
-        
 
     def get_banks(self) -> List[Bank]:
         return self.db.query(Bank).where(Bank.active == True).all()
@@ -149,7 +153,7 @@ class AccountService:
     def get_accounts_by_user(self, user_id: str) -> List[AccountOut]:
         try:
             accounts = self.db.query(Account).join(Account.bank).filter(Account.user_id == user_id).all()
-            
+
             return [AccountOut(
                 id=account.id,
                 account_name=account.account_name,
@@ -168,13 +172,14 @@ class AccountService:
             ) for account in accounts]
         except Exception as e:
             raise ValueError(f"Error fetching accounts: {str(e)}")
+
     def get_referred_balance(self, account_id: int) -> float:
         account = self.db.query(Account).filter(Account.id == account_id).first()
         if not account:
             return 0.0
         # Fetch the balance from Mono API
         try:
-             
+
             latest_transaction = self.db.query(Transaction).filter(
                 Transaction.account_id == account_id).order_by(Transaction.date.desc()).first()
             print(f"Latest transaction for account {account_id}: {latest_transaction}")
@@ -182,7 +187,7 @@ class AccountService:
                 return latest_transaction.balance_after_transaction
             # If no transactions found, return the current balance from the account
             return account.current_balance
-            
+
         except Exception as e:
             print(f"Error fetching balance for account {account_id}: {e}")
             return 0.0
@@ -202,7 +207,7 @@ class AccountService:
             account.currency = data.data.currency
             self.db.commit()
             self.db.refresh(account)
-        
+
         return AccountOut(
             id=account.id,
             account_name=account.account_name,
@@ -220,13 +225,13 @@ class AccountService:
             raise ValueError("Account not found.")
 
         # Disable the account
-        
+
         if not account.account_id:
             raise ValueError("Account is not linked. Please Link your Account first.")
-        
-        result = self.mono_service.disable(account.account_id)  
+
+        result = self.mono_service.disable(account.account_id)
         if not result:
-                raise ValueError("Failed to disable account on Mono.")
+            raise ValueError("Failed to disable account on Mono.")
 
         account.active = False
         self.db.commit()
@@ -256,7 +261,7 @@ class AccountService:
 
         # Enable the account
         if account.account_id is not None:
-            result = self.mono_service.enable(account.account_id)  
+            result = self.mono_service.enable(account.account_id)
             if not result:
                 raise ValueError("Failed to enable account on Mono.")
 
@@ -280,28 +285,29 @@ class AccountService:
             account_type=account.account_type
         )
 
-    async def initiate_account_linking(self, account_id: int, user_id : int) -> AccountMonoData:
+    async def initiate_account_linking(self, account_id: int, user_id: int) -> AccountMonoData:
         """
         Initiate account linking using Mono API.
         """
         try:
-            account : Account = self.db.query(Account).join(Account.user).join(Account.bank).filter(Account.id == account_id, Account.user_id == user_id).first()
-            
+            account: Account = self.db.query(Account).join(Account.user).join(Account.bank).filter(
+                Account.id == account_id, Account.user_id == user_id).first()
+
             data = AccountLinkData(
                 customer_email=account.user.email,
                 customer_name=account.user.fullname,
                 account_id=account.id,
                 institution_id=account.bank.institution_id,
-                institution_auth_method = account.bank.auth_method or 'internet_banking',
+                institution_auth_method=account.bank.auth_method or 'internet_banking',
                 scope='auth'
             )
             if not account:
                 raise ValueError("Account not found.")
-            
+
             response = self.mono_service.initiate_account_linking(data)
             if response.status != "successful":
                 raise ValueError(f"Failed to initiate account linking: {response.message}")
-            
+
             data = response.data
             print(f"Account linking initiated for account ID: {account.id} with session ID: {data}")
             unique_id = str(uuid.uuid4())
@@ -310,12 +316,13 @@ class AccountService:
                 mono_data=data,
                 session_id=unique_id
             )
-            await cache_service.set_cache(mono_acount_data.mono_data.customer, json.dumps(mono_acount_data.model_dump(mode="json")),1800) 
-            await cache_service.set_cache(unique_id, json.dumps({'status':True}), 1800)  # Cache for 30 seconds
+            await cache_service.set_cache(mono_acount_data.mono_data.customer,
+                                          json.dumps(mono_acount_data.model_dump(mode="json")), 1800)
+            await cache_service.set_cache(unique_id, json.dumps({'status': True}), 1800)  # Cache for 30 seconds
             return mono_acount_data
         except requests.RequestException as e:
             raise ValueError(f"Error initiating account linking: {str(e)}")
-        
+
     def delete_account(self, account_id: int, user_id: int) -> bool:
         # delete account from the database
         print(account_id, user_id)
@@ -356,7 +363,7 @@ class AccountService:
             unsliced_accounts.append(account)
 
         return unsliced_accounts
-    
+
     async def link_account(self, data: AccountLinkData, user_id: int) -> AccountMonoData:
         """
         Link an account using Mono API.
@@ -365,7 +372,7 @@ class AccountService:
             account = self.db.query(Account).filter(Account.id == data.account_id, Account.user_id == user_id).first()
             if not account:
                 raise ValueError("Account not found.")
-        
+
             response = self.mono_service.initiate_account_linking(data)
 
             if response.status != "successful":
@@ -377,14 +384,14 @@ class AccountService:
                 mono_data=data,
                 session_id=unique_id
             )
-            await cache_service.set_cache(mono_acount_data.mono_data.customer, json.dumps(mono_acount_data.model_dump(mode="json")),1800) 
-            await cache_service.set_cache(unique_id, json.dumps({'status':True}), 1800)  # Cache for 30 seconds
+            await cache_service.set_cache(mono_acount_data.mono_data.customer,
+                                          json.dumps(mono_acount_data.model_dump(mode="json")), 1800)
+            await cache_service.set_cache(unique_id, json.dumps({'status': True}), 1800)  # Cache for 30 seconds
             return data
         except requests.RequestException as e:
             raise ValueError(f"Error linking account: {str(e)}")
-        
-       
-    async def sync_account_id_with_account(self, data : dict) -> AccountOut:
+
+    async def sync_account_id_with_account(self, data: dict) -> AccountOut:
         customer_id = data.get('customer')
         link_data = await cache_service.get_cache(customer_id)
         link_json_data = json.loads(link_data)
@@ -396,10 +403,10 @@ class AccountService:
         account.active = True
         self.db.commit()
         self.db.refresh(account)
-        
-        self.refresh_balance(account.id) 
+
+        self.refresh_balance(account.id)
         fetch_initial_transactions.delay(account.id)
-        
+
         result = AccountOut(
             id=account.id,
             account_name=account.account_name,
@@ -420,14 +427,14 @@ class AccountService:
         await cache_service.delete_cache(account_mono_data.session_id)
         await cache_service.delete_cache(customer_id)
         return result
-    
-    #write a service from the router session to get a session stored in cache and check if the session is active
+
+    # write a service from the router session to get a session stored in cache and check if the session is active
     async def get_session_status(self, session_id: str) -> dict:
         session_data = await cache_service.get_cache(session_id)
-        
+
         if not session_data:
             print(f"Session {session_id} not found in cache.")
-            return {'status': False }
-           
+            return {'status': False}
+
         session_data = json.loads(session_data)
         return session_data
