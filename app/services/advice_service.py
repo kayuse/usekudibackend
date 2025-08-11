@@ -31,30 +31,35 @@ class AdviceService:
         self.llm = ChatOpenAI(api_key=self.ai_key, temperature=0, model="gpt-4o-mini")
 
     def process(self, user: User, question: str) -> str:
-        chat_history = RedisChatMessageHistory(
-            session_id=f"user_{user.id}",  # This is the actual key in Redis
-            url=self.redis
-        )
-        memory = ConversationBufferMemory(memory_key="chat_history", chat_memory=chat_history, return_messages=True)
 
-        sql_tool = Tool(
-            name="SQL Query Tool",
-            func=lambda q: self.generate_sql_chains(q, table_info="data_view", user=user),
-            description="Use this tool to query the SQL database when the question is about structured data."
-        )
-        semantic_tool = Tool(
-            name="Semantic Transaction Search",
-            func=lambda q: self.semantic_search_metadata,
-            description="Use this for finding transactions by meaning, not exact keywords. Using the data_view table "
-        )
+        try:
+            chat_history = RedisChatMessageHistory(
+                session_id=f"user_{user.id}",  # This is the actual key in Redis
+                url=self.redis
+            )
+            memory = ConversationBufferMemory(memory_key="chat_history", chat_memory=chat_history, return_messages=True)
 
-        tools = [sql_tool, semantic_tool]
+            sql_tool = Tool(
+                name="SQL Query Tool",
+                func=lambda q: self.generate_sql_chains(q, table_info="data_view", user=user),
+                description="Use this tool to query the SQL database when the question is about structured data. Always return transactions as a numbered list even if it's one. Always default to the Current Year"
+            )
+            semantic_tool = Tool(
+                name="Semantic Transaction Search",
+                func=lambda q: self.semantic_search_metadata,
+                description="Use this for finding transactions by meaning, not exact keywords. Using the data_view table. Always return transactions as a numbered list even if it's one. Always default to the Current Year",
+            )
 
-        agent = initialize_agent(tools, self.llm, memory=memory, agent="zero-shot-react-description", verbose=True,
-                                 max_iterations=8)
-        response = agent.run(question)
+            tools = [semantic_tool, sql_tool]
 
-        return str(response)
+            agent = initialize_agent(tools, self.llm, memory=memory, agent="zero-shot-react-description", verbose=True,
+                                     max_iterations=8)
+            response = agent.run(question)
+
+            return str(response)
+        except Exception as e:
+            print(e)
+            return "Something went wrong"
 
     def semantic_search_metadata(self, query):
         embeddings = OpenAIEmbeddings(api_key=self.ai_key, model="text-embedding-ada-002")
@@ -92,7 +97,7 @@ class AdviceService:
                 4. Always filter results by `user_id = {user_id}`.  
                 5. Never return ID columns — return their descriptive equivalents (e.g., return `category_name` instead of `category_id`).  
                 6. For string searches, use `ILIKE` with `%` wildcards (e.g., `ILIKE '%term%'`) for case-insensitive matches.  
-                7. Never include the embedding column
+                7. Always use the Currency in the transaction_currency or Default to Naira
                 8. If no date range is specified, default to transactions from the CURRENT year.
                 9. Return only syntactically correct SQL for PostgreSQL.  
                 
@@ -116,15 +121,16 @@ class AdviceService:
                 - account_number (int)  
                 - account_active (bool)  
                 - account_type (string)  
-                - category_name (string) — name of the transaction category  
+                - category_name (string) — name of the transaction category pass transaction_type here....
                 - category_description (string) — description of the transaction category  
                 - transaction_currency (string)  
                 - transaction_date (datetime)  
                 - transaction_amount (float)  
-                - transaction_type (string: debit or credit)  
+                - transaction_type (string: debit or credit) Do not pass any filter that's not debit or credit here always use category_name
                 - transaction_description (string) — use ILIKE here  
                 - transaction_created_at (datetime)  
                 - transaction_updated_at (datetime)  
+                
                 
                 INPUT:  
                 Question: {question}  

@@ -153,10 +153,9 @@ class TransactionService:
             data.append(a_transaction)
 
         return data
-
     def search(self, user_id: int, params: TransactionSearch) -> list[TransactionOut]:
         query = self.db.query(Transaction).join(Account).join(Category)
-        query = query.filter(Account.user_id == user_id).filter(Account.active == True)
+        query = query.filter(Account.user_id == user_id)
         query = query.filter(Transaction.date >= params.start_date).filter(Transaction.date <= params.end_date)
         if params.account_id:
             query = query.filter(Transaction.account_id == params.account_id)
@@ -198,8 +197,11 @@ class TransactionService:
                 )
             )
             data.append(a_transaction)
-
+        print(f"Found {len(data)} transactions matching the search criteria.")
         return data
+
+    def get_spending_categories(self, user_id: int) -> list[CategoryOut]:
+        pass
 
     def create_transaction(self, transaction: AccountCreate):
         db_transaction = Transaction(**transaction.dict())

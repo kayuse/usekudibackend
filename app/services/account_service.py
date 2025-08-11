@@ -292,6 +292,8 @@ class AccountService:
         try:
             account: Account = self.db.query(Account).join(Account.user).join(Account.bank).filter(
                 Account.id == account_id, Account.user_id == user_id).first()
+            # if not account:
+            #     raise ValueError("Account not found.")
 
             data = AccountLinkData(
                 customer_email=account.user.email,
@@ -301,10 +303,10 @@ class AccountService:
                 institution_auth_method=account.bank.auth_method or 'internet_banking',
                 scope='auth'
             )
-            if not account:
-                raise ValueError("Account not found.")
+
 
             response = self.mono_service.initiate_account_linking(data)
+            print(response)
             if response.status != "successful":
                 raise ValueError(f"Failed to initiate account linking: {response.message}")
 
@@ -321,6 +323,7 @@ class AccountService:
             await cache_service.set_cache(unique_id, json.dumps({'status': True}), 1800)  # Cache for 30 seconds
             return mono_acount_data
         except requests.RequestException as e:
+            print(f"Failed to initiate account linking: {e}")
             raise ValueError(f"Error initiating account linking: {str(e)}")
 
     def delete_account(self, account_id: int, user_id: int) -> bool:

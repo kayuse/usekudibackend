@@ -35,7 +35,6 @@ def get_transactions_for_user_skip(
     user : UserOut= Depends(decode_user),
     db: Session = Depends(get_db)
 ):
-    print(start_date, end_date, category_id, search_text, account_id, skip, limit)
     start_date_data = datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S.%fZ") if start_date else datetime.now() - timedelta(days=7)
     end_date_data = datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S.%fZ") if end_date else datetime.now()
     transaction_search = TransactionSearch(
