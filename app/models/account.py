@@ -61,6 +61,7 @@ class Category(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False, unique=True)
     description = Column(String(255), nullable=True)
+    icon = Column(String(255), nullable=True)
 
     def __repr__(self):
         return f"<Category(id={self.id}, name='{self.name}')>"  
@@ -88,5 +89,46 @@ class Transaction(Base):
     def __repr__(self):
         return f"<Transaction(transactionid={self.id}, accountid={self.account_id}, amount={self.amount}, transaction_type='{self.transaction_type}', date='{self.date}', balance_after_transaction='{self.balance_after_transaction}')>"
 
-# Account.transactions = relationship("Transaction", order_by=Transaction.transactionid, back_populates="account")
-# This code defines a Transaction model that has a many-to-one relationship with the Account model.
+    def ai_data(self):
+        return f"Transaction ID : {self.transaction_id}, Date: {self.date}, Transaction Type: {self.transaction_type}, Amount: {self.amount}, Description: {self.description}, Category: {self.category}"
+
+class Budget(Base):
+    __tablename__ = "budgets"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(500), nullable=False, unique=False)
+    user_id = Column(Integer, ForeignKey("users.id"),nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"),nullable=False)
+    amount = Column(Float, nullable=False)
+
+User.budgets = relationship("Budget", back_populates="user")
+Budget.user = relationship("User", back_populates="budgets")
+
+
+class AverageBalance(Base):
+    __tablename__ = "average_balances"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"),nullable=False)
+    average_balance = Column(Float, nullable=False)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+
+User.average_balance = relationship("AverageBalance", back_populates="user")
+AverageBalance.user = relationship("User", back_populates="average_balance")
+
+class TransactionInsight(Base):
+    __tablename__ = "transaction_insights"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(200), nullable=False)
+    priority = Column(String, nullable=False)
+    insight_type = Column(String, nullable=False)
+    insight = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    is_latest = Column(Boolean, nullable=False, default=False)
+
+
+User.transaction_insights = relationship("TransactionInsight", back_populates="user")
+TransactionInsight.user = relationship("User", back_populates="transaction_insights")
+
+

@@ -22,8 +22,9 @@ celery_app.conf.beat_schedule = {
         'task': 'auto_classify_transactions',
         'schedule': crontab(minute='*/10'),  # every 10 mins
     },
-    'generate_transaction_embeddings': {
-        'task': 'generate_transaction_embeddings',
+    'auto_generate_insights': {
+        'task': 'auto_generate_insights',
         'schedule': crontab(minute='*'),  # every minute
     },
+
 }

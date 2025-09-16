@@ -6,6 +6,7 @@ from alembic import context
 from app.models.verification import FaceRequests
 from app.models.user import User
 from app.models.account import Account, Transaction
+from app.models.session import Session, SessionAccount, SessionTransaction
 from app.models.message import Message
 from dotenv import load_dotenv
 from app.database.index import Base

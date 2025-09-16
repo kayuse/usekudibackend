@@ -16,7 +16,7 @@ class AuthService:
         self.db = db_session
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         self.secret = os.getenv('SECRET_KEY') # Replace with your actual secret key
-        self.expire_minutes = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30))  # Default to 30 minutes if not set
+        self.expire_minutes = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 90))  # Default to 30 minutes if not set
         self.algorithm = "HS256"
         
     def hash_password(self, password: str) -> str:

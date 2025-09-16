@@ -51,8 +51,7 @@ class MonoService:
             params['start'] = start_date
         if end_date:
             params['end'] = end_date
-        response = requests.get(url, headers=headers, params=params)     
-        print(response.headers)
+        response = requests.get(url, headers=headers, params=params)
         if response.status_code != 200:
             raise ValueError("Failed to fetch transactions")
         return response.json().get('data', []) or []
@@ -85,6 +84,7 @@ class MonoService:
             'redirect_url': data.redirect_url,
         }
         response = requests.post(f'{self.mono_api_base_url}/accounts/initiate', json=data, headers=headers)
+        print(response.text)
         if response.status_code != 200:
             raise ValueError("Failed to initiate account linking")
         response_data = response.json()

@@ -7,7 +7,9 @@ import os
 from dotenv import load_dotenv
 
 from app.data.mono import MonoAccountLinkData
-load_dotenv(override=True) 
+from app.data.user import UserOut
+
+load_dotenv(override=True)
 
 class AccountCreate(BaseModel):
     account_name: str
@@ -35,10 +37,6 @@ class BankOut(BaseModel):
 
     class Config:
         from_attributes = True
-        
-
-
-
 
 class BankCreate(BaseModel):
     bank_name: str
@@ -113,7 +111,54 @@ class TransactionOut(BaseModel):
     transaction_type: str  # e.g., 'credit', 'debit'
     description: Optional[str] = None
     category_id: Optional[int] = None  # Optional category ID for the transaction
-    category : CategoryOut = None  # Optional category object
+    category : Optional[CategoryOut] = None  # Optional category object
     account : AccountOut = None
     class Config:
         from_attributes = True
+
+
+class AccountDetailsOut(BaseModel):
+    account_name: str
+    account_number: str
+    current_balance: float
+    currency: str
+    active: bool
+    bank_id: int
+    bank: Optional[BankOut] = None
+
+    class Config:
+        from_attributes = True
+
+class TransactionCategoryOut(BaseModel):
+    category_id: int
+    category_name: str
+    category_icon :str
+    amount: float
+
+class TransactionAverage(BaseModel):
+    average_in : float
+    average_out : float
+
+class BudgetOut(BaseModel):
+
+    id: int
+    user_id: int
+    user: Optional[UserOut] = None
+    amount: float
+    category_id: Optional[int] = None
+    category : Optional[CategoryOut] = None
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+class BudgetCreate(BaseModel):
+    name: str
+    category_id: int
+    amount: float
+
+class BudgetInsightOut(BaseModel):
+    budget_name: str
+    planned_amount: float
+    actual_amount: float
+    variance: float

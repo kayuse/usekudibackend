@@ -4,11 +4,18 @@ import time
 from dateutil.relativedelta import relativedelta
 
 from dotenv import load_dotenv
-from sqlalchemy import text
-from app.data.account import AccountCreate, AccountOut, CategoryOut, TransactionOut, TransactionSearch
+from sqlalchemy import text, select, func, cast
+from sqlalchemy.sql.expression import extract
+from sqlalchemy.sql.sqltypes import Date
+
+from app.data.account import AccountCreate, AccountOut, CategoryOut, TransactionOut, TransactionSearch, \
+    TransactionCategoryOut, TransactionAverage
 from app.data.mono import MonoInstitutionData
+from app.data.user import UserOut
 from app.models.account import Account, Bank, Category, Transaction
 from sqlalchemy.orm import Session
+
+from app.models.user import User
 from app.services import cache_service
 import os
 
@@ -40,7 +47,7 @@ class TransactionService:
             print(f"Account with ID {account_id} not found.")
             return False
         # Fetch transactions from the Mono API
-        start_from = start_from or datetime.now() - relativedelta(months=3)
+        start_from = start_from or datetime.now() - relativedelta(months=12)
 
         transactions_data = self.mono_service.get_transactions(start_date=start_from.strftime('%d-%m-%Y'),
                                                                end_date=datetime.now().strftime('%d-%m-%Y'),
@@ -138,6 +145,11 @@ class TransactionService:
                 id=transaction.id,
                 category_id=transaction.category_id,
                 transaction_type=transaction.transaction_type,
+                category=CategoryOut(
+                    id = transaction.category.id,
+                    name=transaction.category.name,
+                    description=transaction.category.description
+                ),
                 account=AccountOut(
                     id=transaction.account.id,
                     account_id=transaction.account.account_id,
@@ -153,6 +165,68 @@ class TransactionService:
             data.append(a_transaction)
 
         return data
+
+    def get_outflow(self, user_id: int, start_date: datetime, end_date: datetime) -> float:
+        query = self.db.query(func.sum(Transaction.amount)).join(Account)
+        query = query.filter(Account.user_id == user_id).filter(Account.active == True)
+        query = query.filter(Transaction.date >= start_date).filter(Transaction.date <= end_date)
+        query = query.filter(Transaction.transaction_type == "debit")
+        outflow = query.scalar()
+
+        return outflow or 0
+
+    def get_daily_average(self, user_id: int, start_date: datetime, end_date: datetime) -> TransactionAverage:
+        query = (
+            self.db.query(
+                Transaction.transaction_type,
+                func.sum(Transaction.amount).label("total_amount")
+            )
+            .join(Account)
+            .filter(Account.user_id == user_id, Account.active == True)
+            .filter(Transaction.date >= start_date, Transaction.date <= end_date)
+            .group_by(Transaction.transaction_type)
+        )
+        results = query.all()
+
+        delta = (end_date - start_date).days
+        average_in = 0
+        average_out = 0
+        for txn_type, total in results:
+            if txn_type == "debit":
+                average_out = float(total / delta)
+            if txn_type == "credit":
+                average_in = float(total / delta)
+        return TransactionAverage(
+            average_out=average_out,
+            average_in=average_in,
+        )
+
+    def get_weekly_average(self, user_id: int, start_date: datetime, end_date: datetime) -> TransactionAverage:
+        query = (
+            self.db.query(
+                Transaction.transaction_type,
+                func.sum(Transaction.amount).label("total_amount")
+            )
+            .join(Account)
+            .filter(Account.user_id == user_id, Account.active == True)
+            .filter(Transaction.date >= start_date, Transaction.date <= end_date)
+            .group_by(Transaction.transaction_type)
+        )
+        results = query.all()
+
+        delta = (end_date - start_date).days // 7
+        average_in = 0
+        average_out = 0
+        for txn_type, total in results:
+            if txn_type == "debit":
+                average_out = float(total / delta)
+            if txn_type == "credit":
+                average_in = float(total / delta)
+        return TransactionAverage(
+            average_out=average_out,
+            average_in=average_in,
+        )
+
     def search(self, user_id: int, params: TransactionSearch) -> list[TransactionOut]:
         query = self.db.query(Transaction).join(Account).join(Category)
         query = query.filter(Account.user_id == user_id)
@@ -324,3 +398,32 @@ class TransactionService:
 
         print(f"Generated and stored embedding for transaction ID {transaction.id}.")
         return True
+
+    def get_transaction_summary(self, user: UserOut, from_date: datetime, to_date: datetime) -> list[
+        TransactionCategoryOut]:
+        account_ids = self.db.query(Account.id).filter(Account.user_id == user.id).all()
+        account_ids = [id for (id,) in account_ids]
+        stmt = (
+            select(
+                Category.id.label('category_id'),
+                Category.name.label('category_name'),
+                Category.icon.label('category_icon'),
+                func.sum(Transaction.amount).label("total_amount")
+            )
+            .join(Transaction.category)
+            .where(Transaction.date.between(from_date, to_date),
+                   Transaction.account_id.in_(account_ids))
+            .group_by(Category.id, Category.name, Category.icon)
+        )
+        results = self.db.execute(stmt).all()
+        data: list[TransactionCategoryOut] = []
+        for transaction in results:
+            data.append(
+                TransactionCategoryOut(
+                    category_id=transaction.category_id,
+                    category_name=transaction.category_name,
+                    category_icon=transaction.category_icon,
+                    amount=transaction.total_amount)
+            )
+
+        return data

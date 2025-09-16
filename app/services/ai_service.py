@@ -5,7 +5,8 @@ import string
 from langchain.memory import ConversationBufferMemory
 from langchain_community.chat_message_histories import RedisChatMessageHistory
 from langchain_openai import ChatOpenAI
-from requests import Session
+from sqlalchemy.orm import Session
+
 from app.data.ai_models import AIMessageResponse, StateResponse
 from app.data.user import UserCreate
 from app.models.account import Category, Transaction
@@ -16,7 +17,6 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from app.models.user import User
-from app.services.advice_service import AdviceService
 from app.services.auth_service import AuthService
 from app.services.cache_service import get_cache, set_cache
 
@@ -29,8 +29,8 @@ class AIService:
         self.db_session = db_session
         self.redis = os.getenv('REDIS_URL')
         self.openai_client = OpenAI(api_key=os.getenv('CHAT_GPT_KEY'))
-        self.advice_service = AdviceService(
-            db_session=db_session)  # Assuming you have an AdviceService to handle advice-related operations
+        # self.advice_service = AdviceService(
+        #     db_session=db_session)  # Assuming you have an AdviceService to handle advice-related operations
         self.auth_service = AuthService(
             db_session=db_session)  # Assuming you have an AuthService to handle user-related operations
 
@@ -82,12 +82,12 @@ class AIService:
             return AIMessageResponse(
                 message=self.generate_response(
                     context="account_linking",
-                    prompt=f"Please click the following link to link your account: {link_url}"
+                    prompt=f"Please click the following link to link your account:"
                 )
             )
         elif action == "transaction":
             # Handle transaction logic here
-            message = self.advice_service.process(user, prompt)
+            message = 'None'
             return AIMessageResponse(
                 message=message
             )

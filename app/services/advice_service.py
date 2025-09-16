@@ -1,7 +1,11 @@
-from typing import Optional
+from datetime import timedelta, datetime
+from typing import Optional, List
 
+from chromadb.utils import embedding_functions
+from langchain_openai import OpenAIEmbeddings
 from langchain.chains.llm import LLMChain
 from langchain_community.chat_message_histories import RedisChatMessageHistory
+from langchain_community.vectorstores import Chroma
 from requests import Session
 from langchain_openai import ChatOpenAI
 import re
@@ -11,11 +15,17 @@ from langchain_openai import OpenAIEmbeddings
 from langchain.prompts.prompt import PromptTemplate
 from sqlalchemy import text
 from langchain.agents import initialize_agent, Tool
+
+from app.data.account import TransactionOut
+from app.data.user import UserOut
 from app.database.index import engine
 from app.models.account import Account
 from app.models.user import User
 import os
 from dotenv import load_dotenv
+
+from app.services.transaction_service import TransactionService
+from app.util.chroma_db import get_chroma_db
 
 load_dotenv(override=True)
 
@@ -27,12 +37,16 @@ class AdviceService:
         self.pgurl = os.getenv("PG_URL")
         self.ai_key = os.getenv('CHAT_GPT_KEY')
         self.redis = os.getenv("REDIS_URL")
+        self.chroma_client = get_chroma_db()
+        self.user = None
+        self.transaction_service = TransactionService(db_session=db_session)
         self.N = 10
         self.llm = ChatOpenAI(api_key=self.ai_key, temperature=0, model="gpt-4o-mini")
 
-    def process(self, user: User, question: str) -> str:
+    def process(self, user: UserOut, question: str) -> str:
 
         try:
+            self.user = user
             chat_history = RedisChatMessageHistory(
                 session_id=f"user_{user.id}",  # This is the actual key in Redis
                 url=self.redis
@@ -46,14 +60,14 @@ class AdviceService:
             )
             semantic_tool = Tool(
                 name="Semantic Transaction Search",
-                func=lambda q: self.semantic_search_metadata,
+                func=lambda q: self.semantic_search_metadata(q),
                 description="Use this for finding transactions by meaning, not exact keywords. Using the data_view table. Always return transactions as a numbered list even if it's one. Always default to the Current Year",
             )
 
             tools = [semantic_tool, sql_tool]
 
             agent = initialize_agent(tools, self.llm, memory=memory, agent="zero-shot-react-description", verbose=True,
-                                     max_iterations=8)
+                                     max_iterations=10)
             response = agent.run(question)
 
             return str(response)
@@ -61,31 +75,83 @@ class AdviceService:
             print(e)
             return "Something went wrong"
 
-    def semantic_search_metadata(self, query):
-        embeddings = OpenAIEmbeddings(api_key=self.ai_key, model="text-embedding-ada-002")
+    def get_collection(self):
+        openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=self.ai_key,
+            model_name="text-embedding-3-small"
+        )
+        collection = self.chroma_client.get_or_create_collection(name="chat_engine", embedding_function=openai_ef)
+        return collection
 
-        vectorstore = PGVector(connection=engine, embeddings=embeddings, collection_name="data_view")
+    def index_documents(self, transactions: List[TransactionOut], user: UserOut):
+        collection = self.get_collection()
+        for transaction in transactions:
+            existing = collection.get(
+                where={
+                    "$and": [
+                        {"user_id": {"$eq": user.id}},
+                        {"transaction_id": {"$eq": transaction.id}}
+                    ]
+                }
+            )
+
+            if existing and len(existing["ids"]) > 0:
+                continue
+
+            transaction_data = (
+                f"Transaction ID : {transaction.transaction_id}, Date: {transaction.date}, Transaction Type: {transaction.transaction_type}, Amount: {transaction.account.currency} {transaction.amount}, "
+                f"Description: {transaction.description}, Category Name: {transaction.category.name},"
+                f"Category Description: {transaction.category.description}")
+
+            collection.add(
+                documents=[transaction_data],
+                ids=[f"{transaction.id}"],
+                metadatas=[{"user_id": f"user_{user.id}", "transaction_id": transaction.id}],
+            )
+
+    def get_documents(self, query: str, user: UserOut):
+        collection = self.get_collection()
+        transaction_documents = collection.query(
+            query=query,
+            n_results=10,
+            where={
+                "user_id": user.id
+            }
+        )
+        return transaction_documents
+
+    def semantic_search_metadata(self, query):
+        index_document = False
+        if index_document:
+            today = datetime.today()
+            start_of_last_week = today - timedelta(days=300)
+            end_date = today
+            user_transactions = self.transaction_service.get_transactions(user_id=self.user.id,
+                                                                          start_date=start_of_last_week,
+                                                                          end_date=end_date, limit=10000)
+            self.index_documents(user_transactions, self.user)
+
+        openai_ef = OpenAIEmbeddings(
+            api_key=self.ai_key,
+            model="text-embedding-3-small"
+        )
+        vectorstore = Chroma(
+            client=self.chroma_client,
+            collection_name="chat_engine",
+            embedding_function=openai_ef
+        )
         retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-        docs = retriever.get_relevant_documents(query)
-        return [
-            {
-                "id": doc.metadata["transaction_id"],
-                "description": doc.page_content,
-                "amount": doc.metadata["amount"],
-                "date": doc.metadata["transaction_date"]
-            }
-            for doc in docs
-        ]
+        return retriever.invoke(query)
 
-    def generate_sql_chains(self, question: str, table_info: str, user: User) -> str:
+    def generate_sql_chains(self, question: str, table_info: str, user: UserOut) -> str:
 
         custom_prompt = PromptTemplate(
             input_variables=["input", "table_info", "user_id"],
             template=
 
             """
-                                You are an expert PostgreSQL SQL generator for a financial assistant.  
+                You are an expert PostgreSQL SQL generator for a financial assistant.  
                 You must generate exactly one valid PostgreSQL SELECT statement — no explanations, no markdown, no comments.  
                 
                 RULES:  
@@ -121,12 +187,12 @@ class AdviceService:
                 - account_number (int)  
                 - account_active (bool)  
                 - account_type (string)  
-                - category_name (string) — name of the transaction category pass transaction_type here....
+                - category_name (string) — name of the transaction category(food, pos, transfers, transport)
                 - category_description (string) — description of the transaction category  
                 - transaction_currency (string)  
                 - transaction_date (datetime)  
                 - transaction_amount (float)  
-                - transaction_type (string: debit or credit) Do not pass any filter that's not debit or credit here always use category_name
+                - transaction_type (string: debit or credit) Do not pass any filter that's not debit or credit here always use category_name for transaction category.
                 - transaction_description (string) — use ILIKE here  
                 - transaction_created_at (datetime)  
                 - transaction_updated_at (datetime)  
