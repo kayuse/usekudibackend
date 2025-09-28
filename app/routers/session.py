@@ -8,6 +8,7 @@ from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCr
 from app.data.user import UserOut
 from app.database.index import decode_user, get_db
 from app.services.budget_service import BudgetService
+from app.workers.session_tasks import analyze_transactions
 from app.services.session_service import SessionService
 from app.services.session_transaction_service import SessionTransactionService
 from app.services.transaction_service import TransactionService  # Adjust import paths as needed
@@ -35,6 +36,15 @@ async def upload_file(files: list[UploadFile] = File(...),
         service = SessionService(db=db)
         result = await service.process_statements(session_id, files, bank_ids)
         return {"result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/analyze/{id}")
+async def analyze(id: str):
+    try:
+        await analyze_transactions.delay(id)
+        return {"result": True}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

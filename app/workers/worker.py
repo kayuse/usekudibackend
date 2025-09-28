@@ -1,6 +1,6 @@
 from .ai_tasks import run_rag
 from .celery_app import celery_app
-from .session_tasks import process_statements
+from .session_tasks import process_statements, analyze_transactions
 from .transaction_insight_tasks import auto_generate_insights
 
 from .transaction_tasks import fetch_initial_transactions, auto_classify_transactions, sync_account_transactions, \
@@ -16,6 +16,7 @@ __all__ = [
     # 'generate_transaction_embeddings',
     'auto_generate_insights',
     'process_statements',
+    'analyze_transactions',
     'run_rag',
     'auto_fetch_transactions',
     'sync_account_transactions',

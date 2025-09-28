@@ -2,7 +2,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
-from app.data.account import BankOut
+from app.data.account import BankOut, TransactionCategoryOut
 from app.models.session import SessionTransaction, SessionAccount
 
 
@@ -98,9 +98,9 @@ class SpendingProfileOut(BaseModel):
     budget_conscious:float
 
 class FinancialProfileDataIn(BaseModel):
-    session : SessionOut
+    session_id : str
     income_flow: IncomeFlowOut
     risk: RiskOut
-    income_categories: list[IncomeCategoryOut]
+    income_categories: list[TransactionCategoryOut]
     spending_profile: SpendingProfileOut
-    transactions: List[TransactionDataOut]
+    transactions: TransactionDataOut

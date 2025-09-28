@@ -114,14 +114,3 @@ class SessionSavingsPotential(Base):
 
 Session.potentials = relationship("SessionSavingsPotential", back_populates="session")
 SessionSavingsPotential.session = relationship("Session", back_populates="session_savings_potentials")
-
-class SessionFinancialData(Base):
-    __tablename__ = 'session_financial_data'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
-    liquidity_risk = Column(Float, nullable=False, default=0.0)
-    concentration_risk = Column(Float, nullable=False, default=0.0)
-    volatility_risk = Column(Float, nullable=False, default=0.0)
-    expense_risk = Column(Float, nullable=False, default=0.0)
-    income_flow = Column(Float, nullable=False, default=0.0)
-

@@ -79,7 +79,7 @@ class SessionAIService:
         print("Bank ID: {}".format(bank_id))
         return bank_id
 
-    def generate_insights(self, session: SessionModel, transactions: list[SessionTransaction],
+    def generate_insights(self, session: SessionModel, transactions: list[type[SessionTransaction]],
                           data_in: FinancialProfileDataIn):
 
         documents = []
@@ -190,7 +190,7 @@ class SessionAIService:
         self.db.commit()
         return data
 
-    def generate_swot(self, session: SessionModel, transactions: list[SessionTransaction],
+    def generate_swot(self, session: SessionModel, transactions: list[type[SessionTransaction]],
                       data_in: FinancialProfileDataIn):
 
         documents = []
@@ -304,8 +304,8 @@ class SessionAIService:
 
         return data
 
-    def generate_savings_potential(self, session: SessionModel, transactions: list[SessionTransaction],
-                          data_in: FinancialProfileDataIn):
+    def generate_savings_potential(self, session: SessionModel, transactions: list[type[SessionTransaction]],
+                                   data_in: FinancialProfileDataIn):
 
         documents = []
         for transaction in transactions:
@@ -397,7 +397,8 @@ class SessionAIService:
         print(response['text'].root)
         data: list[SavingsPotential] = response["text"].root
 
-        potentials = [SessionSavingsPotential(session_id=session.id,potential = record.potential, amount  = record.amount) for record in data]
+        potentials = [SessionSavingsPotential(session_id=session.id, potential=record.potential, amount=record.amount)
+                      for record in data]
         self.db.bulk_save_objects(potentials)
         self.db.commit()
         return data

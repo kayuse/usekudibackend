@@ -10,7 +10,8 @@ import numpy as np
 import statistics as stats
 
 from app.data.account import TransactionCategoryOut
-from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut
+from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut, \
+    FinancialProfileDataIn, SpendingProfileOut
 from app.models.account import Category
 from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel
 
@@ -301,3 +302,21 @@ class SessionTransactionService:
         average_spending: float = stats.mean(transaction_amounts)
 
         return sd_spending / average_spending
+
+    def calculate_financial_position(self, session_id: str) -> FinancialProfileDataIn:
+        income_flow = self.get_income_flow(session_id)
+        spending_profile = SpendingProfileOut(
+            spending_ratio=self.get_spending_ratio(session_id),
+            savings_ratio=self.get_savings_ratio(session_id),
+            budget_conscious=self.budget_conscious_ration(session_id)
+        )
+        transactions = self.get_transactions_from_sessions(session_id)
+        account_ids = [account.id for account in transactions.accounts ]
+        return FinancialProfileDataIn(
+            session_id=session_id,
+            income_flow=income_flow,
+            risk=self.get_risk_data(session_id),
+            spending_profile=spending_profile,
+            income_categories=self.get_income_by_category(account_ids),
+            transactions=transactions
+        )

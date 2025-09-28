@@ -29,7 +29,11 @@ class SessionService:
         identifier: str = uuid.uuid4().hex
         session_name = f"session_{identifier}"
 
-        session = SessionModel(identifier=identifier, name=session_name, email=data.email)
+        session = SessionModel(identifier=identifier,
+                               name=session_name,
+                               customer_type=data.customer_type,
+                               processing_status="started",
+                               email=data.email)
         self.db.add(session)
         self.db.commit()
         return SessionOut.model_validate(session)
