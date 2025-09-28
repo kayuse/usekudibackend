@@ -8,6 +8,30 @@ from pydantic import BaseModel
 class MonoAccountResponseData(BaseModel):
     id: str
 
+class MonoBankDetails(BaseModel):
+    name : str
+    bank_code : str
+    type : str
+
+class AccountDetailsData(BaseModel):
+    id : str
+    name : str
+    currency : str
+    type : str
+    account_number : str
+    balance : float
+    bvn : str
+    institution :MonoBankDetails
+
+class MonoDetailsData(BaseModel):
+    account : AccountDetailsData
+
+class MonoDetailsResponseData(BaseModel):
+    status: str
+    message: str
+    timestamp: str
+    data: MonoDetailsData
+
 class MonoBalanceResponseData(BaseModel):
     id: str
     balance: float
@@ -79,3 +103,4 @@ class AccountMonoData(BaseModel):
     account_id: int
     mono_data: MonoAccountLinkData
     session_id: str
+

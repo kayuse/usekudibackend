@@ -12,7 +12,8 @@ from .routers.account import router as account_router
 from .routers.transaction import router as transaction_router
 from .routers.message import router as message_router
 from .routers.budget import router as budget_router
-from.routers.dashboard import router as dashboard_router
+from .routers.dashboard import router as dashboard_router
+from .routers.session import router as session_router
 from .models import verification
 from .util.errors import CustomError
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +30,7 @@ app.include_router(transaction_router)
 app.include_router(message_router)
 app.include_router(budget_router)
 app.include_router(dashboard_router)
+app.include_router(session_router)
 
 app.add_middleware(
     CORSMiddleware,

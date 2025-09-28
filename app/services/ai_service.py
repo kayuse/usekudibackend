@@ -16,6 +16,8 @@ from langchain.chains import LLMChain
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
+
+from app.models.session import SessionTransaction
 from app.models.user import User
 from app.services.auth_service import AuthService
 from app.services.cache_service import get_cache, set_cache
@@ -307,6 +309,33 @@ class AIService:
         return None
 
     def categorize_transaction(self, transaction: Transaction, categories: list[Category]) -> int:
+        # Placeholder for actual transaction categorization logic
+        # This would typically involve calling an AI model to classify the transaction
+        category_context = "\n".join([
+            f"[{cat.id}] {cat.name}: {cat.description}" for cat in categories])
+
+        prompt_template = PromptTemplate(
+            input_variables=["category_context", "narration", "txn_type"],
+            template="""
+        You are a financial assistant classifying Nigerian bank transactions.
+        Below are possible categories with their ID and descriptions:   
+        {category_context}
+        Given the narration: "{narration}" and the Transaction Type {txn_type}, return ONLY the category ID (a number) that best matches it.
+        Do not explain. Just return the ID.
+        """)
+        llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
+        chain = LLMChain(llm=llm, prompt=prompt_template)
+        narration = transaction.description
+        response = chain.run({
+            "category_context": category_context,
+            "narration": narration,
+            "txn_type": transaction.transaction_type
+        })
+        print(f"AI Response: {response}, {transaction.description}, {transaction.id}")
+        category_id = int(response.strip())
+        return category_id
+
+    def categorize_session_transaction(self, transaction: SessionTransaction, categories: list[Category]) -> int:
         # Placeholder for actual transaction categorization logic
         # This would typically involve calling an AI model to classify the transaction
         category_context = "\n".join([

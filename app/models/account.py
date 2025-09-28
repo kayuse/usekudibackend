@@ -27,7 +27,7 @@ class Bank(Base):
     accounts = relationship("Account", back_populates="bank")
 
     def __repr__(self):
-        return f"<Bank(bank_id={self.bank_id}, bank_name='{self.bank_name}')>"
+        return f"<Bank(bank_id={self.id}, bank_name='{self.bank_name}')>"
 
 class Account(Base):
     __tablename__ = "accounts"

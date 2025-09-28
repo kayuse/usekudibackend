@@ -1,5 +1,6 @@
 import base64
 import os
+import shutil
 import uuid
 from io import BytesIO
 from typing import List
@@ -15,7 +16,7 @@ import boto3
 
 from ..util.errors import CustomError
 
-
+load_dotenv(override=True)
 class FileUploadService:
     conf: dict
     producer: Producer
@@ -24,7 +25,7 @@ class FileUploadService:
     s3_client: BaseClient
 
     def __init__(self):
-        load_dotenv()
+        self.upload_file_path = os.getenv('FILE_UPLOAD_PATH')
         self.s3_client = boto3.client('s3', region_name=os.getenv('AWS_DEFAULT_REGION'))
         self.bucket_name = os.getenv('AWS_BUCKET_NAME')
 
@@ -60,6 +61,29 @@ class FileUploadService:
                     file_name  # S3 file key (same as original file name here)
                 )
                 responses.append(file_name)
+
+            return responses
+
+        except NoCredentialsError:
+            raise CustomError("Invalid Credentials")
+
+        except Exception as e:
+            raise CustomError("Error Uploading File")
+
+    async def upload_to_path(self, files: List[UploadFile]) -> List[str]:
+        responses = []
+        try:
+            for file in files:
+                # Read the file content as bytes
+                # file_content = await file.read()
+                file_name = f"{str(uuid.uuid4())}{file.filename}"
+                # Upload file to S3 bucket
+                file_path = os.path.join(self.upload_file_path, file_name)
+
+                with open(file_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+
+                responses.append(file_path)
 
             return responses
 

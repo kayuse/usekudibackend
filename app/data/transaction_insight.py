@@ -14,5 +14,21 @@ class Insights(RootModel[List[Insight]]):
     pass
 
 
+class TransactionSWOTInsight(BaseModel):
+    strengths: List[str]
+    weaknesses: List[str]
+    opportunities: List[str]
+    threats: List[str]
+
+
+class SavingsPotential(BaseModel):
+    potential: str
+    amount: float
+
+
+class SavingsPotentials(RootModel[List[SavingsPotential]]):
+    pass
+
+
 class ChatCreate(BaseModel):
     text: str

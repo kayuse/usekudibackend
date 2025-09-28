@@ -18,9 +18,13 @@ celery_app = Celery(
 celery_app.conf.timezone = 'Africa/Lagos'
 
 celery_app.conf.beat_schedule = {
-    'auto-classify-transactions-every-10-mins': {
-        'task': 'auto_classify_transactions',
-        'schedule': crontab(minute='*/10'),  # every 10 mins
+    # 'auto-classify-transactions-every-10-mins': {
+    #     'task': 'auto_classify_transactions',
+    #     'schedule': crontab(minute='*/10'),  # every 10 mins
+    # },
+    'auto_classify_session_transactions-every-10-mins': {
+        'task': 'auto_classify_session_transactions',
+        'schedule': crontab(minute='*/20'),  # every 10 mins
     },
     'auto_generate_insights': {
         'task': 'auto_generate_insights',
