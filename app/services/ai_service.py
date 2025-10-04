@@ -258,7 +258,7 @@ class AIService:
             return only JSON in this exact format
             {format_instructions}
         """)
-        llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, openai_api_key=self.open_ai_api_key)
         chain = LLMChain(llm=llm, prompt=prompt_template)
         response = chain.run({"user_input": message})
         response_data = output_parser.parse(response)
@@ -323,7 +323,7 @@ class AIService:
         Given the narration: "{narration}" and the Transaction Type {txn_type}, return ONLY the category ID (a number) that best matches it.
         Do not explain. Just return the ID.
         """)
-        llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, openai_api_key=self.open_ai_api_key)
         chain = LLMChain(llm=llm, prompt=prompt_template)
         narration = transaction.description
         response = chain.run({
@@ -350,7 +350,7 @@ class AIService:
         Given the narration: "{narration}" and the Transaction Type {txn_type}, return ONLY the category ID (a number) that best matches it.
         Do not explain. Just return the ID.
         """)
-        llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, openai_api_key=self.open_ai_api_key)
         chain = LLMChain(llm=llm, prompt=prompt_template)
         narration = transaction.description
         response = chain.run({
@@ -420,7 +420,7 @@ class AIService:
                     Return only JSON in exactly this format: {format_instructions}
 "
         """)
-        llm = ChatOpenAI(temperature=0, model="gpt-4o", max_tokens=1000, openai_api_key=self.open_ai_api_key)
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, openai_api_key=self.open_ai_api_key)
         chain = LLMChain(llm=llm, prompt=prompt_template, memory=memory)
         response = chain.run({"intent": intent})
         response_data = output_parser.parse(response)

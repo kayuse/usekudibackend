@@ -1,34 +1,43 @@
+import asyncio
 from typing import List
 
 from celery import shared_task
-
+import traceback
 from app.data.session import SessionAccountOut
 from app.database.index import get_db
-from app.models.session import SessionAccount, Session
+from app.models.session import SessionAccount, Session, SessionFile, SessionTransaction
+from app.services.cache_service import get_cache, set_cache
+from app.services.session_advice_service import SessionAdviceService
 from app.services.session_ai_service import SessionAIService
 from app.services.session_transaction_service import SessionTransactionService
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)
-def process_statements(self, session_id: str, file_paths: List[str], bank_ids: List[int]):
+def process_statements(self, session_id: str, files_id: List[int], bank_ids: List[int]):
+    return asyncio.run(run_process_statements(session_id, files_id, bank_ids))
+
+
+async def run_process_statements(session_id: str, files_id: List[int], bank_ids: List[int]):
     try:
         db = next(get_db())
         session_ai_service = SessionAIService(db)
         session_transaction_service = SessionTransactionService(db)
         session_accounts: List[SessionAccountOut] = []
-        id_session = db.query(Session).filter(Session.identifier == session_id).first()
+        session_record = db.query(Session).filter(Session.identifier == session_id).first()
 
         print("Initializing session accounts...")
-
-        for index, file_path in enumerate(file_paths):
-            print("Processing file {}".format(file_path))
-            statement = session_ai_service.read_pdf_statement(file_path)
+        session_record.processing_status = "initializing_statements"
+        db.commit()
+        for index, file_id in enumerate(files_id):
+            print("Processing file {}".format(file_id))
+            session_file = db.query(SessionFile).filter(SessionFile.id == file_id).first()
+            statement = await session_ai_service.read_pdf_statement(session_file)
             bank_id = bank_ids[index]
             print("Bank ID: {}".format(bank_id))
             account = SessionAccount(account_name=statement.accountName,
                                      account_number=statement.accountNumber,
                                      current_balance=statement.accountBalance,
-                                     session_id=id_session.id,
+                                     session_id=session_record.id,
                                      fetch_method='statement',
                                      currency=statement.accountCurrency,
                                      bank_id=bank_id)
@@ -39,9 +48,20 @@ def process_statements(self, session_id: str, file_paths: List[str], bank_ids: L
             session_transaction_service.process_transaction_statements(account.id, statement)
             session_accounts.append(SessionAccountOut.model_validate(account))
 
-        id_session.processing_status = "processed_statements"
-        id_session.save()
+        session_record.processing_status = "processed_statements"
         db.commit()
+
+        session_record.processing_status = "categorizing"
+        db.commit()
+
+        category_response = session_transaction_service.categorize_session_transactions(session_record.id)
+
+        if not category_response:
+            raise ValueError("Invalid Categorization for session transactions {}".format(session_id))
+
+        await analyze_run_payments(session_record.identifier)
+        session_record.processing_status = "processed_payment_analysis"
+
         return True
     except Exception as e:
         print(e)
@@ -55,18 +75,68 @@ def analyze_transactions(self, session_id: str):
         print("Generating financial profile...")
         session_ai_service = SessionAIService(db)
         session_transaction_service = SessionTransactionService(db)
-        session_accounts: List[SessionAccountOut] = []
-        id_session : Session = db.query(Session).filter(Session.identifier == session_id).first()
-        id_session.processing_status = "analyzing"
+        session_record: Session = db.query(Session).filter(Session.identifier == session_id).first()
+
+        session_record.processing_status = "analyzing_financial_profile"
+
         db.commit()
-        financial_profile = session_transaction_service.calculate_financial_position(id_session.identifier)
-        insights = session_ai_service.generate_insights(session=id_session, transactions=financial_profile.transactions.transactions,
-                                                        data_in=financial_profile.data_in)
-        swot = session_ai_service.generate_swot(session=id_session, transactions=financial_profile.transactions.transactions, data_in=financial_profile.data_in)
-        savings_potential = session_ai_service.generate_savings_potential(session=id_session,transactions=financial_profile.transactions.transactions,data_in=financial_profile.data_in)
-        id_session.processing_status = "done"
+
+        financial_profile = session_transaction_service.calculate_financial_position(session_record.identifier)
+        insights = session_ai_service.generate_insights(session=session_record,
+                                                        data_in=financial_profile)
+        session_record.processing_status = "analyzing_insights"
+
+        db.commit()
+        swot = session_ai_service.generate_swot(session=session_record,
+                                                data_in=financial_profile)
+        session_record.processing_status = "analyzing_swot"
+
+        db.commit()
+        savings_potential = session_ai_service.generate_savings_potential(session=session_record,
+                                                                          data_in=financial_profile)
+        session_record.processing_status = "analyzing_savings_potential"
+
+        db.commit()
+        session_ai_service.get_overall_assessment(session=session_record, insights=insights,
+                                                  savings_potential=savings_potential, swot_insight=swot)
+        session_record.processing_status = "processed_analysis"
+
         db.commit()
         return True
     except Exception as e:
         print(e)
-# self.retry(countdown=10)
+        traceback.print_exc()
+
+
+@shared_task(bind=True, max_retries=10, default_retry_delay=60)
+def analyze_payments(self, session_id: str):
+    return asyncio.run(analyze_run_payments(session_id))
+
+
+async def analyze_run_payments(session_id: str):
+    try:
+        db = next(get_db())
+        print("Analyzing Payments for Session {}".format(session_id))
+        session_record: Session = db.query(Session).filter(Session.identifier == session_id).first()
+        session_advice_service = SessionAdviceService(db)
+
+        beneficiary_result = await session_advice_service.process_top_beneficiaries(session_record.identifier)
+        recurring_data = session_advice_service.get_recurring_expenses(session_record.identifier)
+
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+
+    # accounts = db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).all()
+    # account_ids = [account.id for account in accounts]
+    # transactions = db.query(SessionTransaction).filter(
+    #     SessionTransaction.account_id.in_(account_ids)).all()
+    # vector_db_key = "session_vector_{}".format(session_id)
+    #
+    # is_indexed_data = await get_cache(vector_db_key)
+    # is_indexed = bool(is_indexed_data)
+    # if not is_indexed:
+    #     is_indexed = session_advice_service.index_transactions(session_record, transactions)
+    #
+    # if not is_indexed:
+    #     return

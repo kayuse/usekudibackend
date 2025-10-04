@@ -32,3 +32,19 @@ class SavingsPotentials(RootModel[List[SavingsPotential]]):
 
 class ChatCreate(BaseModel):
     text: str
+
+class OverallAssessment(BaseModel):
+    title: str
+    assessment: str
+
+class ClusteredTransactionNames(BaseModel):
+    name: str
+    description: str
+
+class TransactionBeneficiary(BaseModel):
+    name : str
+    is_self : bool
+
+class TransactionBeneficial(BaseModel):
+    name: str
+    amount: float

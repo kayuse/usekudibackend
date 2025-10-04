@@ -11,7 +11,7 @@ import statistics as stats
 
 from app.data.account import TransactionCategoryOut
 from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut, \
-    FinancialProfileDataIn, SpendingProfileOut
+    FinancialProfileDataIn, SpendingProfileOut, SessionTransactionOut, SessionAccountOut
 from app.models.account import Category
 from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel
 
@@ -124,14 +124,44 @@ class SessionTransactionService:
             print(f"Error categorizing transactions: {e}")
             return False
 
+    def categorize_session_transactions(self, session_id : int) -> bool:
+        try:
+
+            accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_id).all()
+            account_ids = [account.id for account in accounts]
+            transactions = self.db.query(SessionTransaction).filter(SessionTransaction.account_id.in_(account_ids) & SessionTransaction.category_id.is_(None)).all()
+            print(f"Found {len(transactions)} transactions to categorize.")
+            categories = self.db.query(Category).all()
+            if not transactions:
+                print("No transactions to categorize.")
+                return True
+
+            for transaction in transactions:
+                if transaction.category_id is not None:
+                    continue
+                print(f"Categorizing transaction: {transaction.id} - {transaction.description}")
+                # Example categorization logic (to be replaced with actual logic)
+                category_id = self.ai_service.categorize_session_transaction(transaction, categories)
+                transaction.category_id = category_id
+                self.db.commit()
+                self.db.refresh(transaction)
+
+            return True
+        except Exception as e:
+            print(f"Error categorizing transactions: {e}")
+            return False
     def process_transaction_statements(self, account_id: int, statement: Statement) -> bool:
+        print(f"Processing transaction statements for account: {account_id}, With statements {len(statement.transactions)} ")
         for transaction in statement.transactions:
-            transaction_date = datetime.strptime(transaction.transactionDate, "%Y-%m-%d %H:%M:%S")
+            if (transaction.description is None or transaction.amount is None or transaction.transactionType
+                    is None or transaction.amount is None or transaction.transactionDate is None):
+                continue
+            # transaction_date = datetime.strptime(transaction.transactionDate, "%Y-%m-%d %H:%M:%S")
             transaction = SessionTransaction(transaction_id=transaction.transactionId,
                                              account_id=account_id, currency=statement.accountCurrency,
                                              description=transaction.description,
-                                             transaction_type=transaction.transactionType,
-                                             amount=abs(transaction.amount), date=transaction_date
+                                             transaction_type=transaction.transactionType.lower(),
+                                             amount=abs(transaction.amount), date=transaction.transactionDate,
                                              )
             self.db.add(transaction)
 
@@ -148,7 +178,7 @@ class SessionTransactionService:
         account_ids = [a.id for a in session_accounts]
 
         transactions = self.db.query(SessionTransaction).filter(SessionTransaction.account_id.in_(account_ids)).all()
-
+        print(f"Found {len(transactions)} transactions to get income flow.")
         inflows = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
 
         outflows = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'debit')
@@ -188,21 +218,29 @@ class SessionTransactionService:
 
         if not session:
             raise ValueError(f"Session with ID {session_id} not found.")
-        session_accounts: list[type[SessionAccount]] = self.db.query(SessionAccount).filter(
+
+        session_accounts = self.db.query(SessionAccount).filter(
             SessionAccount.session_id == session.id).all()
+
         account_ids: list[int] = [a.id for a in session_accounts]
 
-        transactions: list[type[SessionTransaction]] = self.db.query(SessionTransaction).filter(
+        transactions = self.db.query(SessionTransaction).filter(
             SessionTransaction.account_id.in_(account_ids)).order_by(SessionTransaction.date.asc()).all()
 
+        accounts_data: list[SessionAccountOut] = [SessionAccountOut.model_validate(account) for account in
+                                                  session_accounts]
+
+        transaction_data: list[SessionTransactionOut] = [SessionTransactionOut.model_validate(transaction) for
+                                                         transaction in transactions]
+
         data = TransactionDataOut(
-            transactions=transactions,
-            accounts=session_accounts
+            transactions=transaction_data,
+            accounts=accounts_data,
         )
         return data
 
     def get_risk_data(self, session_id: str) -> RiskOut:
-
+        print(f"Getting risk data for: {session_id}")
         transaction_data = self.get_transactions_from_sessions(session_id)
 
         session_accounts = transaction_data.accounts
@@ -217,9 +255,11 @@ class SessionTransactionService:
 
         difference = end_date - start_date
 
+        average_daily_outflow = self.get_income_flow(session_id).outflow / difference.days if difference.days > 0 else 1
         income_by_category = self.get_income_by_category(account_ids)
 
-        liquidy_risk = float(closing_balance / difference)
+        liquidy_risk = float(closing_balance / average_daily_outflow)
+        print(f"Liquidity Risk data for {session_id} is: {liquidy_risk}")
 
         concentration_risk = float(income_by_category[0].amount / sum(i.amount for i in income_by_category))
 
@@ -243,12 +283,13 @@ class SessionTransactionService:
             )
             .join(SessionTransaction.category)
             .where(
-                SessionTransaction.transaction_type.strip().lower() == 'credit',
+                func.lower(func.trim(SessionTransaction.transaction_type)) == 'credit',
                 SessionTransaction.account_id.in_(account_ids))
             .group_by(Category.id, Category.name, Category.icon)
         )
         results = self.db.execute(stmt).all()
         data: list[TransactionCategoryOut] = []
+        print("Found {} transaction categories.".format(len(results)))
         for transaction in results:
             data.append(
                 TransactionCategoryOut(
@@ -260,40 +301,88 @@ class SessionTransactionService:
 
         return data
 
-    def calculate_expense_risk(self, transactions: list[type[SessionTransaction]]) -> float:
+    def get_expenses_by_category(self, account_ids: list[int]) -> list[TransactionCategoryOut]:
+        stmt = (
+            select(
+                Category.id.label('category_id'),
+                Category.name.label('category_name'),
+                Category.icon.label('category_icon'),
+                func.sum(SessionTransaction.amount).label("total_amount")
+            )
+            .join(SessionTransaction.category)
+            .where(
+                func.lower(func.trim(SessionTransaction.transaction_type)) == 'debit',
+                SessionTransaction.account_id.in_(account_ids))
+            .group_by(Category.id, Category.name, Category.icon)
+        )
+        results = self.db.execute(stmt).all()
+        data: list[TransactionCategoryOut] = []
+        print("Found {} transaction categories.".format(len(results)))
+        for transaction in results:
+            data.append(
+                TransactionCategoryOut(
+                    category_id=transaction.category_id,
+                    category_name=transaction.category_name,
+                    category_icon=transaction.category_icon,
+                    amount=transaction.total_amount)
+            )
+
+        return data
+
+    def calculate_expense_risk(self, transactions: list[SessionTransactionOut]) -> float:
 
         start_date = transactions[0].date
         end_date = transactions[-1].date
 
         delta = end_date - start_date
         weeks = delta.days // 7
-
+        print("There are {} Weeks to calculate expense risk.".format(weeks))
         if weeks <= 0:
             return 0
 
         week_expenses = []
         for i in range(1, weeks + 1):
+
             weights = 10 * (i - 1)
             begin_at = start_date
             if i > 1:
-                begin_at = week_expenses[-1].date + timedelta(days=1)
+                # pick the first date of the next week expense as the last date + 1
+                begin_at = week_expenses[-1][1] + timedelta(days=1)
 
-            end_date = begin_at + timedelta(days=7 * i)
+            end_date = begin_at + timedelta(days=7)
+
             total_amount_this_week = sum(i.amount for i in transactions if
-                                         begin_at <= i.date <= end_date and i.transaction_type.strip().lower() == 'debit')
+                                         begin_at.date() <= i.date.date() <= end_date.date() and i.transaction_type.strip().lower() == 'debit')
 
             week_expenses.append((begin_at, end_date, total_amount_this_week, weights))
         risk_score_sum = 0
+
+        weights = [expense[3] for expense in week_expenses]
+        normalized_weights = [w / sum(weights) for w in weights]
         for index, expense in enumerate(week_expenses):
 
             if index <= 0:
                 continue
-            expense_growth = (expense[index][2] - expense[index - 1][2] / expense[index - 1][2]) * 100
-            risk_score_sum += expense_growth * expense[index][3]
 
-        return risk_score_sum / (len(week_expenses) - 1)
+            previous_week_expense = week_expenses[index - 1][2]
+            current_week_expense = week_expenses[index][2]
+            if previous_week_expense == 0:
+                if current_week_expense == 0:
+                    expense_growth = 0
+                else:
+                    expense_growth = 100
+            elif current_week_expense == 0:
+                expense_growth = 0
+            else:
+                expense_growth = ((current_week_expense - previous_week_expense) / previous_week_expense) * 100
 
-    def get_volatility_risk(self, transactions: list[type[SessionTransaction]]) -> float:
+            risk_score_sum += round(expense_growth, 2) * normalized_weights[index]
+
+        expense_risk_score = risk_score_sum / weeks
+        print("Expense Risk is: {}".format(expense_risk_score))
+        return expense_risk_score
+
+    def get_volatility_risk(self, transactions: list[SessionTransactionOut]) -> float:
 
         transaction_amounts = [transaction.amount for transaction in transactions if
                                transaction.transaction_type.strip().lower() == 'debit']
@@ -301,7 +390,9 @@ class SessionTransactionService:
         sd_spending = float(np.std(transaction_amounts))
         average_spending: float = stats.mean(transaction_amounts)
 
-        return sd_spending / average_spending
+        volatility_risk = sd_spending / average_spending
+        print("Volatility Risk is: {}".format(volatility_risk))
+        return volatility_risk
 
     def calculate_financial_position(self, session_id: str) -> FinancialProfileDataIn:
         income_flow = self.get_income_flow(session_id)
@@ -311,12 +402,16 @@ class SessionTransactionService:
             budget_conscious=self.budget_conscious_ration(session_id)
         )
         transactions = self.get_transactions_from_sessions(session_id)
-        account_ids = [account.id for account in transactions.accounts ]
+        print("Done with transactions to get transactions from sessions.")
+        account_ids = [account.id for account in transactions.accounts]
+        risk_data = self.get_risk_data(session_id)
+        print("Risk data for session {}: {}".format(session_id, risk_data))
         return FinancialProfileDataIn(
             session_id=session_id,
             income_flow=income_flow,
-            risk=self.get_risk_data(session_id),
+            risk=risk_data,
             spending_profile=spending_profile,
             income_categories=self.get_income_by_category(account_ids),
+            expense_categories=self.get_expenses_by_category(account_ids),
             transactions=transactions
         )

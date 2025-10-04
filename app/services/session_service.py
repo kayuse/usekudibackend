@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.data.account import AccountExchangeCreate, TransactionOut
 from app.models.account import Bank, Transaction
-from app.models.session import Session as SessionModel, SessionAccount, SessionTransaction
+from app.models.session import Session as SessionModel, SessionAccount, SessionTransaction, SessionFile
 
 from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, Statement
 from app.services.file_upload_service import FileUploadService
@@ -30,7 +30,7 @@ class SessionService:
         session_name = f"session_{identifier}"
 
         session = SessionModel(identifier=identifier,
-                               name=session_name,
+                               name=data.name,
                                customer_type=data.customer_type,
                                processing_status="started",
                                email=data.email)
@@ -66,10 +66,36 @@ class SessionService:
         except Exception as e:
             raise ValueError(f"Error establishing exchange: {str(e)}")
 
-    async def process_statements(self, session_id: str, files: List[UploadFile], bank_ids : List[int]) -> bool:
+    async def process_statements(self, session_id: str, files: List[UploadFile], passwords: List[str],
+                                 isPassworded: List[bool], bank_ids: List[int],
+                                 ) -> bool:
         try:
+            session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
             file_paths = await self.upload_service.upload_to_path(files)
-            process_statements.delay(session_id, file_paths, bank_ids)
+            session_files: List[int] = []
+            for index, file_path in enumerate(file_paths):
+                password = None
+
+                if isPassworded[index]:
+                    password = passwords[index]
+
+                session_file = SessionFile(file_path=file_path, session_id=session_record.id, password=password)
+                self.db.add(session_file)
+                self.db.commit()
+                self.db.refresh(session_file)
+                session_files.append(session_file.id)
+
+            process_statements.delay(session_id, session_files, bank_ids)
             return True
         except Exception as e:
             raise ValueError(f"Error processing statements: {str(e)}")
+
+
+    def get_session(self, session_id: str) -> SessionOut:
+        try:
+            session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+            print(session)
+            return SessionOut.model_validate(session)
+        except Exception as e:
+            raise ValueError(f"Error getting session: {str(e)}")
+

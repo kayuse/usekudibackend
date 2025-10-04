@@ -1,13 +1,16 @@
+from datetime import datetime
 from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
-from app.data.account import BankOut, TransactionCategoryOut
+from app.data.account import BankOut, TransactionCategoryOut, CategoryOut
 from app.models.session import SessionTransaction, SessionAccount
 
 
 class SessionCreate(BaseModel):
     email: str
+    customer_type : str
+    name : str
 
 
 class SessionOut(BaseModel):
@@ -16,6 +19,9 @@ class SessionOut(BaseModel):
     identifier: str
     email: str
     customer_type: Optional[str]
+    processing_status: str
+    overall_assessment: str
+    overall_assessment_title: str
     model_config = {
         "from_attributes": True
     }
@@ -27,6 +33,25 @@ class SessionAccountOut(BaseModel):
     bank_id: int
     account_number: str
     session_id: int
+    current_balance: float
+    currency: Optional[str]
+    indexed: bool
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class SessionTransactionOut(BaseModel):
+    amount: float
+    account_id: int
+    category_id: int
+    session_account: SessionAccountOut
+    category: CategoryOut
+    transaction_id: str
+    date: datetime
+    transaction_type: str
+    description: str
+
     model_config = {
         "from_attributes": True
     }
@@ -45,13 +70,13 @@ class AccountExchangeSessionCreate(BaseModel):
 
 
 class Transaction(BaseModel):
-    transactionDate: str = Field(...,
+    transactionDate: Optional[datetime] = Field(...,
                                  description="Date in YYYY-MM-DD h:i:s format use 12am as default time if time not found")
     transactionId: Optional[str] = Field(None, description="Transaction reference/ID if present")
-    description: str = Field(..., description="Transaction Description or Details if present")
-    transactionType: str = Field(...,
+    description: Optional[str] = Field(..., description="Transaction Description or Details if present")
+    transactionType: Optional[str] = Field(...,
                                  description="Transaction Type it's either Debit or Credit. You can use the Amount Field to determine the type of transaction")
-    amount: float = Field(...,
+    amount: Optional[float] = Field(...,
                           description="Transaction amount, It could also be in different columns as Withdrawal and Deposit")
     balance: Optional[float] = Field(None, description="Balance after the transaction")
 
@@ -76,31 +101,39 @@ class IncomeFlowOut(BaseModel):
     closing_balance: float
     net_income: float
 
+class SessionStatusOut(BaseModel):
+    session_id: str
+    status: str
+
 class TransactionDataOut(BaseModel):
-    transactions : list[type[SessionTransaction]]
-    accounts : list[type[SessionAccount]]
+    transactions: list[SessionTransactionOut]
+    accounts: list[SessionAccountOut]
+
 
 class RiskOut(BaseModel):
     liquidity_risk: float
     concentration_risk: float
     expense_risk: float
     volatility_risk: float
-    compliance_risk: Optional[int]
+    compliance_risk: Optional[int] = 0
 
 class IncomeCategoryOut(BaseModel):
     category_name: str
     category_id: int
     amount: float
 
+
 class SpendingProfileOut(BaseModel):
-    spending_ratio : float
-    savings_ratio : float
-    budget_conscious:float
+    spending_ratio: float
+    savings_ratio: float
+    budget_conscious: float
+
 
 class FinancialProfileDataIn(BaseModel):
-    session_id : str
+    session_id: str
     income_flow: IncomeFlowOut
     risk: RiskOut
     income_categories: list[TransactionCategoryOut]
+    expense_categories: list[TransactionCategoryOut]
     spending_profile: SpendingProfileOut
     transactions: TransactionDataOut

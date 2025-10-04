@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+import asyncio
+import re
 
 import pdfplumber
 from dotenv import load_dotenv
@@ -9,9 +10,11 @@ from langchain_openai import ChatOpenAI
 from posthog.ai.openai import OpenAI
 from sqlalchemy.orm import Session
 
-from app.data.session import Statement, BankData, FinancialProfileDataIn
-from app.data.transaction_insight import Insights, Insight, TransactionSWOTInsight, SavingsPotentials, SavingsPotential
-from app.models.session import Session as SessionModel, SessionInsight, SessionSwot, SessionSavingsPotential
+from app.data.session import Statement, BankData, FinancialProfileDataIn, SessionTransactionOut
+from app.data.transaction_insight import Insights, Insight, TransactionSWOTInsight, SavingsPotentials, SavingsPotential, \
+    OverallAssessment
+from app.models.session import Session as SessionModel, SessionInsight, SessionSwot, SessionSavingsPotential, \
+    SessionFile
 from app.models.account import Bank
 import os
 
@@ -26,28 +29,57 @@ class SessionAIService:
         self.db = session
         self.ai_key = os.environ.get("CHAT_GPT_KEY")
 
-    def read_pdf_statement(self, path) -> Statement:
-        print("Reading PDF statement from {}".format(path))
-        parser = PydanticOutputParser(pydantic_object=Statement)
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are a financial assistant. Extract structured fields from a bank statement."),
-            ("user", "Here is some text from a bank statement:\n\n{statement_text}\n\n{format_instructions}")
-        ])
-        full_text = ''
-        with pdfplumber.open(path) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
+    def is_encrypted(self):
+        return self.ai_key is not None
 
+    async def process_page(self, i, text, parser, prompt, llm):
         formatted_prompt = prompt.format_messages(
-            statement_text=full_text,
+            statement_text=text,
             format_instructions=parser.get_format_instructions()
         )
-        llm = ChatOpenAI(model='gpt-4.1-mini', temperature=0, api_key=self.ai_key)
-        result = llm.invoke(formatted_prompt)
-        parsed_data: Statement = parser.parse(result.content)
-        return parsed_data
+        result = await llm.ainvoke(formatted_prompt)
+        clean_output = re.sub(r'(\d+),(\d+)', r'\1\2', result.content)
+        parsed_page: Statement = parser.parse(clean_output)
+        return i, parsed_page
+
+    async def read_pdf_statement(self, file: SessionFile) -> Statement:
+        print("Reading PDF statement from {}".format(file.file_path))
+        parser = PydanticOutputParser(pydantic_object=Statement)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             "You are a financial assistant. Extract structured fields from a bank statement. "
+             "Rules:\n"
+             "- All float fields must be plain numbers (e.g. 28989.95) without commas, spaces, or currency symbols.\n"
+             "- All date fields must strictly follow the format YYYY-MM-DD (ISO 8601).\n"
+             "- Only return valid JSON as described in the format instructions."),
+            ("user", "Here is some text from a bank statement:\n\n{statement_text}\n\n{format_instructions}")
+        ])
+        final_statement = Statement(transactions=[])
+        tasks = []
+        with pdfplumber.open(file.file_path) as pdf:
+            last_page_statement = None
+            llm = ChatOpenAI(model='gpt-4.1-mini', temperature=0, api_key=self.ai_key)
+            for i, page in enumerate(pdf.pages, 1):
+                print("Processing page {}".format(i))
+                text = page.extract_text()
+                tasks.append(self.process_page(i, text, parser, prompt, llm))
+
+            results = await asyncio.gather(*tasks)
+
+            for i, parsed_page in sorted(results, key=lambda x: x[0]):
+                if i == 1:
+                    final_statement.accountName = parsed_page.accountName
+                    final_statement.accountNumber = parsed_page.accountNumber
+                    final_statement.accountCurrency = parsed_page.accountCurrency
+                    final_statement.accountBalance = parsed_page.accountBalance
+                final_statement.transactions.extend(parsed_page.transactions)
+                last_page_statement = parsed_page
+
+                if last_page_statement and last_page_statement.accountBalance and final_statement.accountBalance is None:
+                    final_statement.accountBalance = last_page_statement.accountBalance
+            print("Done processing page {}".format(i))
+
+        return final_statement
 
     def get_bank_id(self, bank_name: str) -> int:
         banks = self.db.query(Bank).filter(Bank.active == True).all()
@@ -71,7 +103,7 @@ class SessionAIService:
             bank_name=bank_name, bank_list=banks,
             format_instructions=parser.get_format_instructions()
         )
-        llm = ChatOpenAI(model='gpt-4o', temperature=0, api_key=self.ai_key)
+        llm = ChatOpenAI(model='gpt-4o-mini', temperature=0, api_key=self.ai_key)
         result = llm.invoke(final_prompt)
         data: BankData = parser.parse(result.content)
 
@@ -79,25 +111,15 @@ class SessionAIService:
         print("Bank ID: {}".format(bank_id))
         return bank_id
 
-    def generate_insights(self, session: SessionModel, transactions: list[type[SessionTransaction]],
-                          data_in: FinancialProfileDataIn):
-
-        documents = []
-        for transaction in transactions:
-            if transaction.category_id is None:
-                continue
-
-            transaction_data = (
-                f"Transaction ID : {transaction.transaction_id}, Date: {transaction.date}, Transaction Type: {transaction.transaction_type}, Amount: {transaction.account.currency} {transaction.amount}, "
-                f"Description: {transaction.description}, Category Name: {transaction.category.name},"
-                f"Category Description: {transaction.category.description}")
-            documents.append(transaction_data)
+    def generate_insights(self, session: SessionModel, data_in: FinancialProfileDataIn):
 
         parser = PydanticOutputParser(pydantic_object=Insights)
         format_instructions = parser.get_format_instructions()
 
         prompt_template = PromptTemplate(
-            input_variables=["transaction_documents"],
+            input_variables=["inflow", "outflow", "closing_balance", "liquidity_risk", "concentration_risk",
+                             "expense_risk", "volatility_risk", "spending_ratio", "savings_ratio", "budget_ratio",
+                             "income_categories", "spending_categories"],
             partial_variables={"format_instructions": format_instructions},
             template="""
                            You are a financial assistant that analyzes transaction data. 
@@ -106,7 +128,7 @@ class SessionAIService:
                            
                            Here is the customer's Income/Outflow Profile
                         
-                           Income: {income}
+                           Inflow: {inflow}
                            Outflow: {outflow}
                            Closing Balance: {closing_balance}
                            Net Income: {net_income}
@@ -124,24 +146,31 @@ class SessionAIService:
                            Savings Ratio: {savings_ratio}
                            Budget Conscious Ratio: {budget_ratio}
                            
-                           
-                           Here is a list of transactions:
-    
-                           {transaction_documents}
+                           Here is the Customer's Income Categories Breakdown
+
+                          {income_categories}
+                          
+                          Here is the Customer's Spending Categories Breakdown
+
+                          {spending_categories} 
     
                            Based on this data, generate insights including but not limited to:
                            - Total income (credits) and total expenses (debits)
                            - Biggest spending categories or merchants
                            - Any unusual or large transactions
                            - Spending vs saving balance
+                           - Income sources and their stability
                            - Suggestions for better financial health
+                           - Cash Runway
+                           - Future Expense Prediction
+                           - Seasonal Patterns
     
                            You may also add any other useful observations, such as:
                            - Spending trends over time
-                           - Recurring payments or subscriptions
                            - Changes compared to previous periods
                            - Savings opportunities
                            - Risky or suspicious transactions
+                           - Lifestyle Analysis
     
                            Important output rules:
                            - Each insight must be a JSON object with the following fields:
@@ -165,18 +194,20 @@ class SessionAIService:
 
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
         chain = LLMChain(llm=llm, prompt=prompt_template, output_parser=parser)
-        response = chain.invoke({"transaction_documents": documents,
-                                 "income": data_in.income_flow.income, "outflow": data_in.income_flow.outflow,
-                                 "closing_balance": data_in.income_flow.closing_balance,
-                                 "net_income": data_in.income_flow.net_income,
-                                 "liquidity_risk": data_in.risk.liquidity_risk,
-                                 "concentration_risk": data_in.risk.concentration_risk,
-                                 "expense_risk": data_in.risk.expense_risk,
-                                 "volatility_risk": data_in.risk.volatility_risk,
-                                 "spending_ratio": data_in.spending_profile.spending_ratio,
-                                 "savings_ratio": data_in.spending_profile.savings_ratio,
-                                 "budget_ratio": data_in.spending_profile.budget_conscious})
-        print(response['text'].root)
+        response = chain.invoke({
+            "inflow": data_in.income_flow.inflow, "outflow": data_in.income_flow.outflow,
+            "closing_balance": data_in.income_flow.closing_balance,
+            "net_income": data_in.income_flow.net_income,
+            "liquidity_risk": data_in.risk.liquidity_risk,
+            "concentration_risk": data_in.risk.concentration_risk,
+            "expense_risk": data_in.risk.expense_risk,
+            "volatility_risk": data_in.risk.volatility_risk,
+            "income_categories": data_in.income_categories,
+            "spending_categories": data_in.expense_categories,
+            "spending_ratio": data_in.spending_profile.spending_ratio,
+            "savings_ratio": data_in.spending_profile.savings_ratio,
+            "budget_ratio": data_in.spending_profile.budget_conscious})
+
         data: list[Insight] = response["text"].root
 
         self.db.query(SessionInsight).filter(SessionInsight.session_id == session.id).update(
@@ -190,105 +221,89 @@ class SessionAIService:
         self.db.commit()
         return data
 
-    def generate_swot(self, session: SessionModel, transactions: list[type[SessionTransaction]],
+    def generate_swot(self, session: SessionModel,
                       data_in: FinancialProfileDataIn):
-
-        documents = []
-        for transaction in transactions:
-            if transaction.category_id is None:
-                continue
-
-            transaction_data = (
-                f"Transaction ID : {transaction.transaction_id}, Date: {transaction.date}, Transaction Type: {transaction.transaction_type}, Amount: {transaction.account.currency} {transaction.amount}, "
-                f"Description: {transaction.description}, Category Name: {transaction.category.name},"
-                f"Category Description: {transaction.category.description}")
-            documents.append(transaction_data)
 
         parser = PydanticOutputParser(pydantic_object=TransactionSWOTInsight)
         format_instructions = parser.get_format_instructions()
 
         prompt_template = PromptTemplate(
-            input_variables=["transaction_documents"],
+            input_variables=["inflow", "outflow", "closing_balance", "liquidity_risk", "concentration_risk",
+                             "expense_risk", "volatility_risk", "spending_ratio", "income_categories",
+                             "spending_categories", "savings_ratio", "budget_ratio"],
             partial_variables={"format_instructions": format_instructions},
             template="""
-                                                       You are a financial assistant that analyzes transaction and financial profile data.
-                            Your goal is to provide a clear SWOT analysis (Strengths, Weaknesses, Opportunities, Threats) for the customer.
-                            Always be concise, use simple language, and make the insights actionable.
-                            
-                            Here is the customer's Income/Outflow Profile:
-                            
-                            Income: {income}  
-                            Outflow: {outflow}  
-                            Closing Balance: {closing_balance}  
-                            Net Income: {net_income}  
-                            
-                            
-                            Here is the customer's Financial Risk Profile:
-                            
-                            Liquidity Risk: {liquidity_risk}  
-                            Concentration Risk: {concentration_risk}  
-                            Expense Risk: {expense_risk}  
-                            Volatility Risk: {volatility_risk}  
-                            
-                            
-                            Here is the Customer’s Spending Profile:
-                            
-                            Spending Ratio: {spending_ratio}  
-                            Savings Ratio: {savings_ratio}  
-                            Budget Conscious Ratio: {budget_ratio}  
-                            
-                            
-                            Here is a list of transactions:
-                            
-                            {transaction_documents}
-                            
-                            Your Task
-                            
-                            Using all this data, generate a SWOT analysis that highlights:
-                            
-                            Strengths → positive patterns in income, savings, risk control, or spending discipline
-                            
-                            Weaknesses → issues like overspending, high expense growth, or risky behaviors
-                            
-                            Opportunities → areas to improve, diversify income, or save more
-                            
-                            Threats → risks from volatility, liquidity issues, or unusual/suspicious transactions
-                            
-                            Important Output Rules
-                            
-                            Output must strictly follow this JSON structure:
-                            
-                            {
-                              "strengths": ["string", "string", "..."],
-                              "weaknesses": ["string", "string", "..."],
-                              "opportunities": ["string", "string", "..."],
-                              "threats": ["string", "string", "..."]
-                            }
-                            
-                            
-                            Do not include any comments, explanations, or extra text outside the JSON.
-                            
-                            Use simple, clear sentences.
-                            
-                            Keep each point short and actionable.
+                                You are a financial assistant that analyzes transaction and financial profile data.  
+                    Your goal is to provide a clear SWOT analysis (Strengths, Weaknesses, Opportunities, Threats) for the customer.  
+                    Always be concise, use simple language, and make the insights actionable.  
+                    
+                    Here is the customer's Income/Outflow Profile:
+                    
+                    Inflow: {inflow}  
+                    Outflow: {outflow}  
+                    Closing Balance: {closing_balance}  
+                    Net Income: {net_income}  
+                    
+                    Here is the customer's Financial Risk Profile:
+                    
+                    Liquidity Risk: {liquidity_risk}  
+                    Concentration Risk: {concentration_risk}  
+                    Expense Risk: {expense_risk}  
+                    Volatility Risk: {volatility_risk}  
+                    
+                    Here is the Customer’s Spending Profile:
+                    
+                    Spending Ratio: {spending_ratio}  
+                    Savings Ratio: {savings_ratio}  
+                    Budget Conscious Ratio: {budget_ratio}  
+                    
+                    Here is the Customer's Income Categories Breakdown
+
+                    {income_categories}
+                          
+                    Here is the Customer's Spending Categories Breakdown
+
+                    {spending_categories} 
+                    
+                    Your Task  
+                    
+                    Using all this data, generate a SWOT analysis that highlights:  
+                    
+                    - Strengths → positive patterns in income, savings, risk control, or spending discipline  
+                    - Weaknesses → issues like overspending, high expense growth, or risky behaviors  
+                    - Opportunities → areas to improve, diversify income, or save more  
+                    - Threats → risks from volatility, liquidity issues, or unusual/suspicious transactions  
+                    
+                    Important Output Rules:  
+                    
+                    - Output must strictly follow this JSON structure:  
+                    
+                      "strengths": ["string", "string", "..."],
+                      "weaknesses": ["string", "string", "..."],
+                      "opportunities": ["string", "string", "..."],
+                      "threats": ["string", "string", "..."]
+                    
+                    - Do not include any comments, explanations, or extra text outside the JSON.  
+                    - Always include all four keys, even if some arrays are empty.  
+                    - Keep each point short, clear, and actionable. 
                    """)
 
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
         chain = LLMChain(llm=llm, prompt=prompt_template, output_parser=parser)
-        response = chain.invoke({"transaction_documents": documents,
-                                 "income": data_in.income_flow.income, "outflow": data_in.income_flow.outflow,
+        response = chain.invoke({"inflow": data_in.income_flow.inflow, "outflow": data_in.income_flow.outflow,
                                  "closing_balance": data_in.income_flow.closing_balance,
                                  "net_income": data_in.income_flow.net_income,
                                  "liquidity_risk": data_in.risk.liquidity_risk,
                                  "concentration_risk": data_in.risk.concentration_risk,
                                  "expense_risk": data_in.risk.expense_risk,
                                  "volatility_risk": data_in.risk.volatility_risk,
+                                 "income_categories": data_in.income_categories,
+                                 "spending_categories": data_in.expense_categories,
                                  "spending_ratio": data_in.spending_profile.spending_ratio,
                                  "savings_ratio": data_in.spending_profile.savings_ratio,
                                  "budget_ratio": data_in.spending_profile.budget_conscious})
-        print(response['text'].root)
-        data: TransactionSWOTInsight = response["text"].root
 
+        data: TransactionSWOTInsight = response["text"]
         s_data = [SessionSwot(session_id=session.id, analysis=strength, swot_type='strength') for strength in
                   data.strengths]
         w_data = [SessionSwot(session_id=session.id, analysis=w, swot_type='weakness') for w in data.weaknesses]
@@ -304,25 +319,16 @@ class SessionAIService:
 
         return data
 
-    def generate_savings_potential(self, session: SessionModel, transactions: list[type[SessionTransaction]],
+    def generate_savings_potential(self, session: SessionModel,
                                    data_in: FinancialProfileDataIn):
-
-        documents = []
-        for transaction in transactions:
-            if transaction.category_id is None:
-                continue
-
-            transaction_data = (
-                f"Transaction ID : {transaction.transaction_id}, Date: {transaction.date}, Transaction Type: {transaction.transaction_type}, Amount: {transaction.account.currency} {transaction.amount}, "
-                f"Description: {transaction.description}, Category Name: {transaction.category.name},"
-                f"Category Description: {transaction.category.description}")
-            documents.append(transaction_data)
 
         parser = PydanticOutputParser(pydantic_object=SavingsPotentials)
         format_instructions = parser.get_format_instructions()
 
         prompt_template = PromptTemplate(
-            input_variables=["transaction_documents"],
+            input_variables=["inflow", "outflow", "closing_balance", "liquidity_risk", "concentration_risk",
+                             "expense_risk", "volatility_risk", "spending_ratio", "savings_ratio", "budget_ratio",
+                             "income_categories", "spending_categories"],
             partial_variables={"format_instructions": format_instructions},
             template="""
                               You are a financial assistant that analyzes transaction data. 
@@ -331,7 +337,7 @@ class SessionAIService:
 
                               Here is the customer's Income/Outflow Profile
 
-                              Income: {income}
+                              Inflow: {inflow}
                               Outflow: {outflow}
                               Closing Balance: {closing_balance}
                               Net Income: {net_income}
@@ -348,11 +354,14 @@ class SessionAIService:
                               Spending Ratio: {spending_ratio}
                               Savings Ratio: {savings_ratio}
                               Budget Conscious Ratio: {budget_ratio}
+                              
+                              Here is the Customer's Income Categories Breakdown
 
+                              {income_categories}
+                          
+                              Here is the Customer's Spending Categories Breakdown
 
-                              Here is a list of transactions:
-
-                              {transaction_documents}
+                              {spending_categories} 
 
                               Based on this data, generate savings potential including but not limited to:
                               - Total income (credits) and total expenses (debits)
@@ -383,22 +392,91 @@ class SessionAIService:
 
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
         chain = LLMChain(llm=llm, prompt=prompt_template, output_parser=parser)
-        response = chain.invoke({"transaction_documents": documents,
-                                 "income": data_in.income_flow.income, "outflow": data_in.income_flow.outflow,
+        response = chain.invoke({"inflow": data_in.income_flow.inflow, "outflow": data_in.income_flow.outflow,
                                  "closing_balance": data_in.income_flow.closing_balance,
                                  "net_income": data_in.income_flow.net_income,
                                  "liquidity_risk": data_in.risk.liquidity_risk,
                                  "concentration_risk": data_in.risk.concentration_risk,
                                  "expense_risk": data_in.risk.expense_risk,
+                                 "income_categories": data_in.income_categories,
+                                 "spending_categories": data_in.expense_categories,
                                  "volatility_risk": data_in.risk.volatility_risk,
                                  "spending_ratio": data_in.spending_profile.spending_ratio,
                                  "savings_ratio": data_in.spending_profile.savings_ratio,
                                  "budget_ratio": data_in.spending_profile.budget_conscious})
-        print(response['text'].root)
+
         data: list[SavingsPotential] = response["text"].root
 
         potentials = [SessionSavingsPotential(session_id=session.id, potential=record.potential, amount=record.amount)
                       for record in data]
         self.db.bulk_save_objects(potentials)
+        self.db.commit()
+        return data
+
+    def get_overall_assessment(self, session: SessionModel, insights: list[Insight],
+                               savings_potential: list[SessionSavingsPotential],
+                               swot_insight: TransactionSWOTInsight,):
+
+        parser = PydanticOutputParser(pydantic_object=OverallAssessment)
+        format_instructions = parser.get_format_instructions()
+
+        prompt_template = PromptTemplate(
+            input_variables=["insights", "swot", "savings_potential", "customer_type"],
+            partial_variables={"format_instructions": format_instructions},
+            template="""
+                    You are a financial assistant that analyzes transaction data.  
+                    Your goal is to provide clear overall assessments for the customer
+                    Always be concise, use simple language, and make the insights actionable.  
+                    
+                    Here is the customer's Insights:  
+                    {insights}  
+                    
+                    Here is the customer's SWOT Analysis:  
+                    {swot}  
+                    
+                    Here is the Customer's Savings Potentials:  
+                    {savings_potential}  
+                    
+                    Here is the Customer Type:  
+                    {customer_type}  
+                    
+                    Your Task:  
+                    Based on all this data, generate an **Overall Assessment Analysis** — a financial profile of the customer.  
+                    
+                    
+                    Always put into consideration:  
+                    - The Customer Type (Individual, Business, Church, NGO, etc.)  
+                    - Spending trends over time  
+                    - Recurring payments or subscriptions  
+                    - Changes compared to previous periods  
+                    - Savings opportunities  
+                    - Risky or suspicious transactions  
+                    - Risk Scores  
+                    - Customer Spending Profiles  
+                    
+                    Important Output Rules: 
+                    
+                    Let the Title be like a summary of the actual Assessment.
+
+                    {format_instructions}
+                    
+                    - Always return ONLY a JSON object with exactly these two fields:
+                      "title": "string"
+                      "assessment": "string"
+                    - Do not include savings_potentials or any other fields.
+                      
+                     """)
+
+        llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
+        chain = LLMChain(llm=llm, prompt=prompt_template, output_parser=parser)
+        response = chain.invoke({"insights": insights, "swot": swot_insight,
+                                 "savings_potential": savings_potential,
+                                 "customer_type": session.customer_type})
+
+        data = response["text"]
+
+        session.overall_assessment_title = data.title
+        session.overall_assessment = data.assessment
+
         self.db.commit()
         return data
