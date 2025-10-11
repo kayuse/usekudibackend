@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from typing import List
 from sqlalchemy.orm import Session
+from websocket import WebSocket
 
 from app.data.account import TransactionOut, TransactionSearch, TransactionCategoryOut, BudgetCreate, BudgetOut
 from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, IncomeFlowOut
@@ -32,16 +33,16 @@ def start(data: SessionCreate, db: Session = Depends(get_db)):
 async def upload_file(files: list[UploadFile] = File(...),
                       bank_ids: List[int] = Form(...),
                       session_id: str = Form(...),
-                      passwords: List[str] = Form(...),
-                      is_password: List[bool] = Form(...),
                       db: Session = Depends(get_db)):
     try:
         service = SessionService(db=db)
-        result = await service.process_statements(session_id, files, passwords, is_password, bank_ids)
+        result = await service.process_statements(session_id, files, bank_ids)
         return {"result": result}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.post("/analyze/{session_id}")
 def analyze(session_id: str):

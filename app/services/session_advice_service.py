@@ -108,7 +108,8 @@ class SessionAdviceService:
         account_ids = [account.id for account in accounts]
         transactions: List[SessionTransaction] = self.db.query(SessionTransaction).filter(
             SessionTransaction.account_id.in_(account_ids)).all()
-
+        if len(transactions) == 0:
+            return False
         for tx in transactions:
             records.append({
                 "transaction_type": tx.transaction_type,
@@ -118,7 +119,7 @@ class SessionAdviceService:
             })
 
         df = pd.DataFrame(records)
-        df = df[df["transaction_type"].str.lower().isin(["debit", "transfer"])]
+        df = df[df["transaction_type"].isin(["debit", "transfer"])]
 
         if df.empty:
             return pd.DataFrame(
@@ -408,7 +409,11 @@ class SessionAdviceService:
 
     @staticmethod
     def get_description_data(transaction: SessionTransaction):
-        return f"{transaction.description}"
+        return (f"Transaction: {transaction.description}. "
+                f"Category: {transaction.category.name}. "
+                f"Type: {transaction.transaction_type}. "
+                f"Amount: {transaction.amount} {transaction.session_account.currency}. "
+                f"Account: {transaction.session_account.account_name}.")
 
     def get_documents(self, query: str, user: UserOut):
         collection = self.get_collection()
@@ -420,3 +425,7 @@ class SessionAdviceService:
             }
         )
         return transaction_documents
+
+    def get_session_beneficiaries(self, session_id: int) -> list[SessionBeneficiary]:
+        beneficiaries = self.db.query(SessionBeneficiary).filter(SessionBeneficiary.session_id == session_id).all()
+        return beneficiaries

@@ -1,11 +1,15 @@
+import asyncio
 from typing import Union
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
 from starlette.responses import JSONResponse
 from dotenv import load_dotenv
-load_dotenv(override=True) 
 
-from .database.index import engine
+from .services.session_chat_service import SessionChatService
+from .util.redis import redis
+
+load_dotenv(override=True)
+from .database.index import engine, get_db
 from .routers.index import router
 from .routers.auth import router as auth_router
 from .routers.account import router as account_router
@@ -20,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 verification.Base.metadata.create_all(bind=engine)
- # Load environment variables from .env file
+# Load environment variables from .env file
 app = FastAPI()
 
 app.include_router(router)
@@ -39,6 +43,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+connected_clients = {}
+
+
 @app.exception_handler(CustomError)
 async def custom_error_handler(request: Request, exc: CustomError):
     return JSONResponse(
@@ -55,3 +62,31 @@ def read_root():
 @app.get("/items/{item_id}")
 def read_item(item_id: int, q: Union[str, None] = None):
     return {"item_id": item_id, "q": q}
+
+
+async def process_chat(session_id: str, socket_id: str, text: str):
+    db = next(get_db())
+    print("Processing Chat {}".format(session_id))
+    chat_service = SessionChatService(db)
+    response = chat_service.process(session_id, text)
+    print("Processing Chat {}".format(session_id))
+    await send_to_user(socket_id, response)
+    return f"Processed message for {socket_id}: {text}"
+
+async def send_to_user(socket_id: str, message: str):
+    websocket = connected_clients.get(socket_id)
+    if websocket:
+        await websocket.send_text(message)
+
+@app.websocket("/chat/{session_id}")
+async def websocket_session(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    session_socket = str(id(websocket))
+    connected_clients[session_socket] = websocket
+    try:
+        while True:
+            user_message = await websocket.receive_text()
+            print(user_message)
+            asyncio.create_task(process_chat(session_id, session_socket, user_message))
+    except WebSocketDisconnect:
+        print("User disconnected")

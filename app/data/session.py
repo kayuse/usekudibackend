@@ -20,8 +20,8 @@ class SessionOut(BaseModel):
     email: str
     customer_type: Optional[str]
     processing_status: str
-    overall_assessment: str
-    overall_assessment_title: str
+    overall_assessment: Optional[str] = None
+    overall_assessment_title: Optional[str] = None
     model_config = {
         "from_attributes": True
     }

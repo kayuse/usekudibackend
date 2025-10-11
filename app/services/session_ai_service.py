@@ -7,6 +7,8 @@ from langchain.chains.llm import LLMChain
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_openai import ChatOpenAI
+from pdfminer.pdfdocument import PDFPasswordIncorrect, PDFException
+from pdfplumber.utils.exceptions import PdfminerException
 from posthog.ai.openai import OpenAI
 from sqlalchemy.orm import Session
 
@@ -42,7 +44,36 @@ class SessionAIService:
         parsed_page: Statement = parser.parse(clean_output)
         return i, parsed_page
 
-    async def read_pdf_statement(self, file: SessionFile) -> Statement:
+    def unlock_pdf(self, file: SessionFile, password: str) -> bool:
+        try:
+            with pdfplumber.open(file.file_path, password=password) as pdf:
+                # Successfully opened
+                file.password = password
+                self.db.commit()
+                print("Unlocked {}".format(file.id))
+                return True
+        except PDFPasswordIncorrect:
+            return False
+        except PdfminerException:
+            return False
+        except Exception as e:
+            # handle other errors (file missing/corrupt)
+            print(e)
+            raise e
+
+    @staticmethod
+    def is_pdf_locked(file: SessionFile):
+        try:
+            # Try opening with given password (empty string if none)
+            with pdfplumber.open(file.file_path, password="") as pdf:
+                # If no exception, it's unlocked
+                return False
+        except PDFPasswordIncorrect:
+            return True
+        except PdfminerException as e:
+            return True
+
+    async def read_pdf_statement(self, file: SessionFile) -> Statement | None:
         print("Reading PDF statement from {}".format(file.file_path))
         parser = PydanticOutputParser(pydantic_object=Statement)
         prompt = ChatPromptTemplate.from_messages([
@@ -56,6 +87,17 @@ class SessionAIService:
         ])
         final_statement = Statement(transactions=[])
         tasks = []
+        if SessionAIService.is_pdf_locked(file):
+            print("PDF is locked, Trying to Unlock PDF")
+            for i in range(1, 10000000):
+                # replace this with whatever work you need to do per number
+                result = self.unlock_pdf(file, str(i))
+                if result:
+                    break
+
+        if SessionAIService.is_pdf_locked(file):
+            return None
+
         with pdfplumber.open(file.file_path) as pdf:
             last_page_statement = None
             llm = ChatOpenAI(model='gpt-4.1-mini', temperature=0, api_key=self.ai_key)
@@ -415,7 +457,7 @@ class SessionAIService:
 
     def get_overall_assessment(self, session: SessionModel, insights: list[Insight],
                                savings_potential: list[SessionSavingsPotential],
-                               swot_insight: TransactionSWOTInsight,):
+                               swot_insight: TransactionSWOTInsight, ):
 
         parser = PydanticOutputParser(pydantic_object=OverallAssessment)
         format_instructions = parser.get_format_instructions()

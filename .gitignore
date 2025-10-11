@@ -69,6 +69,8 @@ build/
 *.egg
 *.whl
 
+chroma_db/
+
 # ----------------------
 # Type checking
 # ----------------------

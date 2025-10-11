@@ -1,3 +1,5 @@
+import asyncio
+
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import json
@@ -12,7 +14,7 @@ import statistics as stats
 from app.data.account import TransactionCategoryOut
 from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut, \
     FinancialProfileDataIn, SpendingProfileOut, SessionTransactionOut, SessionAccountOut
-from app.models.account import Category
+from app.models.account import Category, Account
 from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel
 
 from app.services.ai_service import AIService
@@ -124,34 +126,65 @@ class SessionTransactionService:
             print(f"Error categorizing transactions: {e}")
             return False
 
-    def categorize_session_transactions(self, session_id : int) -> bool:
+    async def categorize_session_transactions(self, session_id: int) -> bool:
         try:
-
+            # Step 1: Fetch accounts and transactions synchronously (SQLAlchemy ORM)
             accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_id).all()
             account_ids = [account.id for account in accounts]
-            transactions = self.db.query(SessionTransaction).filter(SessionTransaction.account_id.in_(account_ids) & SessionTransaction.category_id.is_(None)).all()
+
+            transactions = (
+                self.db.query(SessionTransaction)
+                .filter(
+                    SessionTransaction.account_id.in_(account_ids),
+                    SessionTransaction.category_id.is_(None)
+                )
+                .all()
+            )
+
             print(f"Found {len(transactions)} transactions to categorize.")
-            categories = self.db.query(Category).all()
+
             if not transactions:
                 print("No transactions to categorize.")
                 return True
 
-            for transaction in transactions:
-                if transaction.category_id is not None:
-                    continue
-                print(f"Categorizing transaction: {transaction.id} - {transaction.description}")
-                # Example categorization logic (to be replaced with actual logic)
-                category_id = self.ai_service.categorize_session_transaction(transaction, categories)
-                transaction.category_id = category_id
+            categories = self.db.query(Category).all()
+
+            # Step 2: Define async categorization tasks
+            async def categorize_one(transaction):
+                try:
+                    print(f"Categorizing transaction: {transaction.id} - {transaction.description}")
+                    cat_id = self.ai_service.categorize_session_transaction(transaction, categories)
+                    return transaction.id, cat_id
+                except Exception as e:
+                    print(f"Error categorizing transaction {transaction.id}: {e}")
+                    return transaction.id, None
+
+            # Step 3: Run all categorization concurrently
+            results = await asyncio.gather(*(categorize_one(t) for t in transactions))
+
+            # Step 4: Bulk update in one DB transaction
+            updated_count = 0
+            for txn_id, category_id in results:
+                if category_id:
+                    transaction = next((t for t in transactions if t.id == txn_id), None)
+                    if transaction:
+                        transaction.category_id = category_id
+                        updated_count += 1
+
+            if updated_count > 0:
                 self.db.commit()
-                self.db.refresh(transaction)
+                print(f"Updated {updated_count} transactions.")
 
             return True
+
         except Exception as e:
             print(f"Error categorizing transactions: {e}")
+            self.db.rollback()
             return False
+
     def process_transaction_statements(self, account_id: int, statement: Statement) -> bool:
-        print(f"Processing transaction statements for account: {account_id}, With statements {len(statement.transactions)} ")
+        print(
+            f"Processing transaction statements for account: {account_id}, With statements {len(statement.transactions)} ")
         for transaction in statement.transactions:
             if (transaction.description is None or transaction.amount is None or transaction.transactionType
                     is None or transaction.amount is None or transaction.transactionDate is None):
@@ -415,3 +448,64 @@ class SessionTransactionService:
             expense_categories=self.get_expenses_by_category(account_ids),
             transactions=transactions
         )
+
+    def get_balance(self, account_id: int) -> str | None:
+        print("Getting balance for account {}".format(account_id))
+        account = self.db.query(SessionAccount).filter(SessionAccount.id == account_id).first()
+        if account is None:
+            return None
+        return f"Balance: {account.current_balance} Currency {account.currency}"
+
+    def get_accounts(self, session_id: int) -> list[SessionAccount]:
+        accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_id).all()
+        return accounts
+
+    def get_categories(self):
+        categories = self.db.query(Category).all()
+        return categories
+
+    def get_transaction_by_category(self, category_id: int) -> list[SessionTransactionOut]:
+        transactions = self.db.query(SessionTransactionOut).filter(SessionTransaction.category_id == category_id).all()
+        return [SessionTransactionOut.from_orm(transaction) for transaction in transactions]
+
+    def get_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str) -> list[
+        SessionTransactionOut]:
+        transactions = self.db.query(SessionTransaction).filter(
+            SessionTransaction.account_id.in_(account_ids),
+            SessionTransaction.date >= start_date,
+            SessionTransaction.date <= end_date).all()
+        return [SessionTransactionOut.from_orm(transaction) for transaction in transactions]
+
+    def get_category_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str,
+                                               ) -> list[TransactionCategoryOut]:
+
+        stmt = (
+            select(
+                Category.id.label('category_id'),
+                Category.name.label('category_name'),
+                Category.icon.label('category_icon'),
+                func.sum(SessionTransaction.amount).label("total_amount")
+            )
+            .join(SessionTransaction.category)
+            .where(
+                # transaction_type_stmt,
+                SessionTransaction.account_id.in_(account_ids),
+                SessionTransaction.date >= start_date,
+                SessionTransaction.date <= end_date
+
+            )
+            .group_by(Category.id, Category.name, Category.icon)
+        )
+        results = self.db.execute(stmt).all()
+        data: list[TransactionCategoryOut] = []
+        print("Found {} transaction categories.".format(len(results)))
+        for transaction in results:
+            data.append(
+                TransactionCategoryOut(
+                    category_id=transaction.category_id,
+                    category_name=transaction.category_name,
+                    category_icon=transaction.category_icon,
+                    amount=transaction.total_amount)
+            )
+
+        return data

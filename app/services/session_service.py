@@ -66,20 +66,16 @@ class SessionService:
         except Exception as e:
             raise ValueError(f"Error establishing exchange: {str(e)}")
 
-    async def process_statements(self, session_id: str, files: List[UploadFile], passwords: List[str],
-                                 isPassworded: List[bool], bank_ids: List[int],
+    async def process_statements(self, session_id: str, files: List[UploadFile],
+                                 bank_ids: List[int],
                                  ) -> bool:
         try:
             session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
             file_paths = await self.upload_service.upload_to_path(files)
             session_files: List[int] = []
             for index, file_path in enumerate(file_paths):
-                password = None
 
-                if isPassworded[index]:
-                    password = passwords[index]
-
-                session_file = SessionFile(file_path=file_path, session_id=session_record.id, password=password)
+                session_file = SessionFile(file_path=file_path, session_id=session_record.id, password=None)
                 self.db.add(session_file)
                 self.db.commit()
                 self.db.refresh(session_file)
@@ -90,7 +86,6 @@ class SessionService:
         except Exception as e:
             raise ValueError(f"Error processing statements: {str(e)}")
 
-
     def get_session(self, session_id: str) -> SessionOut:
         try:
             session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
@@ -98,4 +93,3 @@ class SessionService:
             return SessionOut.model_validate(session)
         except Exception as e:
             raise ValueError(f"Error getting session: {str(e)}")
-

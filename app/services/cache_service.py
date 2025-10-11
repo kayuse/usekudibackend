@@ -19,3 +19,12 @@ async def delete_cache(key: str):
     except Exception as e:
         print(f"Error deleting cache for key {key}: {e}")
         
+
+async def publish(key, data: str) -> bool:
+    try:
+        print(f"Publishing data to key {key}")
+        redis.publish(key, data)
+        return True
+    except Exception as e:
+        print(f"Error publishing data to key {key}: {e}")
+        return False

@@ -1,0 +1,323 @@
+[
+  {
+    "name": "query_database",
+    "description": "Run a SQL query on the transaction database and return structured results.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "description": "SQL query to execute" }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "query_vector_db",
+    "description": "Query the vector database using embeddings for semantic similarity search.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query_text": { "type": "string", "description": "Search text or embedding query" },
+        "top_k": { "type": "integer", "default": 10, "description": "Number of similar results to return" }
+      },
+      "required": ["query_text"]
+    }
+  },
+  {
+    "name": "get_transaction_by_id",
+    "description": "Retrieve a single transaction by ID.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "transaction_id": { "type": "string" }
+      },
+      "required": ["transaction_id"]
+    }
+  },
+  {
+    "name": "find_transactions_by_date_range",
+    "description": "Retrieve transactions within a specific date range.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "start_date": { "type": "string", "description": "YYYY-MM-DD" },
+        "end_date": { "type": "string", "description": "YYYY-MM-DD" }
+      },
+      "required": ["start_date", "end_date"]
+    }
+  },
+  {
+    "name": "find_transactions_by_amount_range",
+    "description": "Retrieve transactions within a specific amount range.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "min_amount": { "type": "number" },
+        "max_amount": { "type": "number" }
+      },
+      "required": ["min_amount", "max_amount"]
+    }
+  },
+  {
+    "name": "detect_beneficiary",
+    "description": "Detect the beneficiary of a transaction based on narration/description and account owner.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "owner_name": { "type": "string" }
+      },
+      "required": ["description", "owner_name"]
+    }
+  },
+  {
+    "name": "get_top_beneficiaries",
+    "description": "Get the top beneficiaries based on aggregated transaction amounts.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "limit": { "type": "integer", "default": 5 }
+      }
+    }
+  },
+  {
+    "name": "get_transactions_to_beneficiary",
+    "description": "Fetch all transactions made to a specific beneficiary.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "beneficiary_name": { "type": "string" }
+      },
+      "required": ["beneficiary_name"]
+    }
+  },
+  {
+    "name": "exclude_self_transfers",
+    "description": "Exclude transactions that were sent to the account owner (self transfers).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "owner_name": { "type": "string" }
+      },
+      "required": ["owner_name"]
+    }
+  },
+  {
+    "name": "get_spending_categories",
+    "description": "Return the categories of transactions and their total spend.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_transactions_by_category",
+    "description": "Return all transactions for a given category within an optional date range.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "category_id": { "type": "integer" },
+        "category_name": { "type": "string" },
+        "start_date": { "type": "string" },
+        "end_date": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "aggregate_transactions_by_category",
+    "description": "Aggregate transactions grouped by category (sum, count).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "start_date": { "type": "string" },
+        "end_date": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "get_category_trend",
+    "description": "Show spending trends over time for a category.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "category_id": { "type": "integer" },
+        "interval": { "type": "string", "enum": ["daily", "weekly", "monthly"], "default": "monthly" }
+      },
+      "required": ["category_id"]
+    }
+  },
+  {
+    "name": "classify_transactions_into_categories",
+    "description": "Classify uncategorized transactions into categories based on narration and merchants.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "transaction_ids": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["transaction_ids"]
+    }
+  },
+  {
+    "name": "update_transaction_category",
+    "description": "Update the category of a single transaction.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "transaction_id": { "type": "string" },
+        "category_id": { "type": "integer" }
+      },
+      "required": ["transaction_id", "category_id"]
+    }
+  },
+  {
+    "name": "bulk_recategory",
+    "description": "Re-assign a category to multiple transactions by rule or merchant list.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "transaction_ids": { "type": "array", "items": { "type": "string" } },
+        "category_id": { "type": "integer" }
+      },
+      "required": ["transaction_ids", "category_id"]
+    }
+  },
+  {
+    "name": "map_merchant_to_category",
+    "description": "Maintain or fetch merchant-to-category mapping.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "merchant_name": { "type": "string" },
+        "category_id": { "type": "integer" }
+      }
+    }
+  },
+  {
+    "name": "get_category_summary",
+    "description": "Get a high-level summary of category spending distribution.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "get_cashflow_summary",
+    "description": "Summarize inflows and outflows for a given period.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "start_date": { "type": "string" },
+        "end_date": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "get_balance_trend",
+    "description": "Return account balance over time.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "interval": { "type": "string", "enum": ["daily", "weekly", "monthly"], "default": "daily" }
+      }
+    }
+  },
+  {
+    "name": "get_recurring_transactions",
+    "description": "Identify recurring transactions (subscriptions, rent, etc).",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "detect_anomalies",
+    "description": "Detect suspicious or unusual transactions.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "detect_circular_transactions",
+    "description": "Detect circular transactions (money sent back-and-forth).",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "detect_unusual_beneficiaries",
+    "description": "Detect beneficiaries that deviate from normal transaction behavior.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "predict_future_spending",
+    "description": "Forecast spending for future periods.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "months_ahead": { "type": "integer", "default": 3 }
+      }
+    }
+  },
+  {
+    "name": "project_savings",
+    "description": "Project savings if certain expense categories are reduced.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "category_id": { "type": "integer" },
+        "reduction_percent": { "type": "number" }
+      },
+      "required": ["category_id", "reduction_percent"]
+    }
+  },
+  {
+    "name": "summarize_transactions",
+    "description": "Summarize a list of transactions into a narrative.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "transaction_ids": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["transaction_ids"]
+    }
+  },
+  {
+    "name": "get_transactions_with_keywords",
+    "description": "Find transactions by searching narration/description text.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "keywords": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["keywords"]
+    }
+  },
+  {
+    "name": "cluster_transactions",
+    "description": "Cluster transactions into groups by embeddings.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "n_clusters": { "type": "integer", "default": 5 }
+      }
+    }
+  },
+  {
+    "name": "get_transaction_stats",
+    "description": "Return basic statistics (mean, median, min, max, stddev) for transactions.",
+    "parameters": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+]
+
+
+// get weekly tranasctions
+// daily transactions
+//  monthly transactions
+// get

@@ -344,11 +344,25 @@ class AIService:
         prompt_template = PromptTemplate(
             input_variables=["category_context", "narration", "txn_type"],
             template="""
-        You are a financial assistant classifying Nigerian bank transactions.
-        Below are possible categories with their ID and descriptions:   
-        {category_context}
-        Given the narration: "{narration}" and the Transaction Type {txn_type}, return ONLY the category ID (a number) that best matches it.
-        Do not explain. Just return the ID.
+                You are a financial assistant classifying Nigerian bank transactions.
+                Below are possible categories with their ID and descriptions:
+                {category_context}
+                
+                Rules:
+                
+                Always prioritize the transaction purpose or narration keywords (e.g., "inverter", "school fees", "POS withdrawal", "donation", "fuel") over names of businesses, churches, or NGOs.
+                
+                Do not classify religious, educational, NGO, or business names (e.g., “Bethel”, “Redeemed”, “Catholic”, “Foundation”, “Business Concern”, “Enterprise”, “Ltd”, “Tech”) as betting.
+                
+                Only classify as Betting/Gambling if the narration explicitly matches known gambling/betting platforms (e.g., “Bet9ja”, “SportyBet”, “Nairabet”, “MSport”, “1xBet”, “Lotto”).
+                
+                If narration includes both a business/merchant name and a purchase item (e.g., “inverter”), classify according to the purchase item, not the name.
+                
+                If uncertain, fall back to the most general valid category (e.g., “Transfer”, “Other Expenses”).
+                
+                Given the narration: "{narration}" and the Transaction Type {txn_type}, return ONLY the category ID (a number) that best matches it.
+                Do not explain. Just return the ID.
+                
         """)
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, openai_api_key=self.open_ai_api_key)
         chain = LLMChain(llm=llm, prompt=prompt_template)

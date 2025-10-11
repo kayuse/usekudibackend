@@ -14,6 +14,7 @@ class Session(Base):
     identifier = Column(String(500), nullable=False, unique=True)
     email = Column(String, nullable=False)
     processing_status = Column(String, nullable=True)
+    indexed = Column(Boolean, nullable=True, default=False)
     customer_type = Column(String(50), nullable=True, default='individual')
     overall_assessment = Column(String, nullable=True)
     overall_assessment_title = Column(String, nullable=True)
@@ -44,7 +45,7 @@ class SessionAccount(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     def __repr__(self):
-        return f"<Account(accountid={self.account_id}, account_name='{self.account_name}', account_number='{self.account_number}',bank='{self.bank_id}', active={self.active}, account_type='{self.account_type}', current_balance={self.current_balance}, currency='{self.currency}', fetch_method='{self.fetch_method}')>"
+        return f"<Account(accountid={self.id}, account_name='{self.account_name}', account_number='{self.account_number}',bank='{self.bank_id}', active={self.active}, account_type='{self.account_type}', current_balance={self.current_balance}, currency='{self.currency}', fetch_method='{self.fetch_method}')>"
 
 
 class SessionTransaction(Base):

@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import List
 
 from celery import shared_task
@@ -6,10 +7,12 @@ import traceback
 from app.data.session import SessionAccountOut
 from app.database.index import get_db
 from app.models.session import SessionAccount, Session, SessionFile, SessionTransaction
-from app.services.cache_service import get_cache, set_cache
+from app.services.cache_service import get_cache, set_cache, publish
 from app.services.session_advice_service import SessionAdviceService
 from app.services.session_ai_service import SessionAIService
+from app.services.session_chat_service import SessionChatService
 from app.services.session_transaction_service import SessionTransactionService
+from app.workers.celery_app import celery_app
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)
@@ -32,6 +35,8 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
             print("Processing file {}".format(file_id))
             session_file = db.query(SessionFile).filter(SessionFile.id == file_id).first()
             statement = await session_ai_service.read_pdf_statement(session_file)
+            if statement is None:
+                continue
             bank_id = bank_ids[index]
             print("Bank ID: {}".format(bank_id))
             account = SessionAccount(account_name=statement.accountName,
@@ -48,23 +53,25 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
             session_transaction_service.process_transaction_statements(account.id, statement)
             session_accounts.append(SessionAccountOut.model_validate(account))
 
-        session_record.processing_status = "processed_statements"
-        db.commit()
-
         session_record.processing_status = "categorizing"
         db.commit()
 
-        category_response = session_transaction_service.categorize_session_transactions(session_record.id)
+        category_response = await session_transaction_service.categorize_session_transactions(session_record.id)
 
         if not category_response:
             raise ValueError("Invalid Categorization for session transactions {}".format(session_id))
-
+        session_record.processing_status = "analyzing_payments"
+        db.commit()
         await analyze_run_payments(session_record.identifier)
-        session_record.processing_status = "processed_payment_analysis"
-
+        session_record.processing_status = "analyzing_transactions"
+        db.commit()
+        analyze_transactions(session_record.identifier)
+        session_record.processing_status = "done"
+        db.commit()
         return True
     except Exception as e:
         print(e)
+        traceback.print_exc()
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)
@@ -127,16 +134,14 @@ async def analyze_run_payments(session_id: str):
         print(e)
         traceback.print_exc()
 
-    # accounts = db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).all()
-    # account_ids = [account.id for account in accounts]
-    # transactions = db.query(SessionTransaction).filter(
-    #     SessionTransaction.account_id.in_(account_ids)).all()
-    # vector_db_key = "session_vector_{}".format(session_id)
-    #
-    # is_indexed_data = await get_cache(vector_db_key)
-    # is_indexed = bool(is_indexed_data)
-    # if not is_indexed:
-    #     is_indexed = session_advice_service.index_transactions(session_record, transactions)
-    #
-    # if not is_indexed:
-    #     return
+
+# @shared_task
+# def process_chat(session_id: str, socket_id: str, text: str):
+#     db = next(get_db())
+#     print("Processing Chat {}".format(session_id))
+#     chat_service = SessionChatService(db)
+#     chat_service.process(session_id, text)
+#     publish(f"session_socket:{socket_id}", text)
+#     print("Processing Chat {}".format(session_id))
+#
+#     return f"Processed message for {socket_id}: {text}"
