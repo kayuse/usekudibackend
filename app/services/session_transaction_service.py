@@ -232,19 +232,21 @@ class SessionTransactionService:
         transactions = transaction_data.transactions
         expenses = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'debit')
         income = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
-        return income / expenses
+        ratio = (income / expenses) * 100
+        return min(ratio, 200.0)
 
     def get_savings_ratio(self, session_id: str) -> float:
         transaction_data = self.get_transactions_from_sessions(session_id)
         transactions = transaction_data.transactions
         savings = sum(t.amount for t in transactions if t.category_id == self.savings_category_id)
         income = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
-        return savings / income
+        ratio = (savings / income) * 100
+        return min(ratio, 100.0)
 
     def budget_conscious_ration(self, session_id: str) -> float:
         transaction_data = self.get_transactions_from_sessions(session_id)
-        volatility_risk = self.get_volatility_risk(transaction_data.transactions)
-        return (1 - volatility_risk) * 100
+        volatility = self.get_volatility_risk(transaction_data.transactions)
+        return max(0, min(100, (1 - volatility) * 100))
 
     def get_transactions_from_sessions(self, session_id: str) -> TransactionDataOut:
         session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
@@ -422,10 +424,14 @@ class SessionTransactionService:
 
         sd_spending = float(np.std(transaction_amounts))
         average_spending: float = stats.mean(transaction_amounts)
+        if average_spending == 0:
+            return 0.0
 
         volatility_risk = sd_spending / average_spending
         print("Volatility Risk is: {}".format(volatility_risk))
-        return volatility_risk
+        scaled_risk = np.log1p(volatility_risk) / np.log1p(10)  # normalize roughly to 0–1 range
+        scaled_risk = min(scaled_risk, 1)
+        return scaled_risk
 
     def calculate_financial_position(self, session_id: str) -> FinancialProfileDataIn:
         income_flow = self.get_income_flow(session_id)
@@ -465,7 +471,7 @@ class SessionTransactionService:
         return categories
 
     def get_transaction_by_category(self, category_id: int) -> list[SessionTransactionOut]:
-        transactions = self.db.query(SessionTransactionOut).filter(SessionTransaction.category_id == category_id).all()
+        transactions = self.db.query(SessionTransaction).filter(SessionTransaction.category_id == category_id).all()
         return [SessionTransactionOut.from_orm(transaction) for transaction in transactions]
 
     def get_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str) -> list[

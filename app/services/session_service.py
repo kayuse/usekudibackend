@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.data.account import AccountExchangeCreate, TransactionOut
 from app.models.account import Bank, Transaction
-from app.models.session import Session as SessionModel, SessionAccount, SessionTransaction, SessionFile
+from app.models.session import Session as SessionModel, SessionAccount, SessionTransaction, SessionFile, SessionInsight, \
+    SessionSwot, SessionSavingsPotential
 
-from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, Statement
+from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, \
+    SessionInsightOut, SessionSwotOut, SessionSavingsPotentialOut
 from app.services.file_upload_service import FileUploadService
 from app.services.mono_service import MonoService
 from app.services.session_ai_service import SessionAIService
@@ -74,7 +76,6 @@ class SessionService:
             file_paths = await self.upload_service.upload_to_path(files)
             session_files: List[int] = []
             for index, file_path in enumerate(file_paths):
-
                 session_file = SessionFile(file_path=file_path, session_id=session_record.id, password=None)
                 self.db.add(session_file)
                 self.db.commit()
@@ -93,3 +94,28 @@ class SessionService:
             return SessionOut.model_validate(session)
         except Exception as e:
             raise ValueError(f"Error getting session: {str(e)}")
+
+    def get_insights(self, session_id: str) -> list[SessionInsightOut]:
+        try:
+            session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+            insights = self.db.query(SessionInsight).filter(SessionInsight.session_id == session.id).all()
+            return [SessionInsightOut.model_validate(s) for s in insights]
+        except Exception as e:
+            raise ValueError(f"Error getting insights: {str(e)}")
+
+    def get_swot(self, session_id: str) -> list[SessionSwotOut]:
+        try:
+            session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+            swots = self.db.query(SessionSwot).filter(SessionSwot.session_id == session.id).all()
+            return [SessionSwotOut.model_validate(s) for s in swots]
+        except Exception as e:
+            raise ValueError(f"Error getting session SWOT: {str(e)}")
+
+    def get_savings_potentials(self, session_id: str) -> list[SessionSavingsPotentialOut]:
+        try:
+            session = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+            savings_potentials = self.db.query(SessionSavingsPotential).filter(
+                SessionSavingsPotential.session_id == session.id).all()
+            return [SessionSavingsPotentialOut.model_validate(sp) for sp in savings_potentials]
+        except Exception as e:
+            raise ValueError(f"Error getting session savings potentials: {str(e)}")

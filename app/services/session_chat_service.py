@@ -364,7 +364,7 @@ class SessionChatService:
         categories = self.transaction_service.get_categories()
         return [
             {
-                "category": category.category_name,
+                "category": category.name,
                 "category_id": category.id,
                 "description": category.description
             }

@@ -26,6 +26,23 @@ class SessionOut(BaseModel):
         "from_attributes": True
     }
 
+class SessionInsightOut(BaseModel):
+    title : str
+    priority: str
+    insight_type: str
+    insight : str
+    session_id: int
+    model_config = {
+        "from_attributes": True
+    }
+
+class SessionSwotOut(BaseModel):
+    analysis: str
+    swot_type: str
+    session_id: int
+    model_config = {
+        "from_attributes": True
+    }
 
 class SessionAccountOut(BaseModel):
     id: int
@@ -101,6 +118,8 @@ class IncomeFlowOut(BaseModel):
     closing_balance: float
     net_income: float
 
+
+
 class SessionStatusOut(BaseModel):
     session_id: str
     status: str
@@ -128,6 +147,14 @@ class SpendingProfileOut(BaseModel):
     savings_ratio: float
     budget_conscious: float
 
+class SessionSavingsPotentialOut(BaseModel):
+    potential: str
+    amount: float
+    session_id: int
+
+    model_config = {
+        "from_attributes": True
+    }
 
 class FinancialProfileDataIn(BaseModel):
     session_id: str

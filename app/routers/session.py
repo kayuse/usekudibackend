@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from websocket import WebSocket
 
 from app.data.account import TransactionOut, TransactionSearch, TransactionCategoryOut, BudgetCreate, BudgetOut
-from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, IncomeFlowOut
+from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, IncomeFlowOut, \
+    SessionInsightOut, SessionSwotOut, SpendingProfileOut, FinancialProfileDataIn, SessionSavingsPotentialOut
 from app.data.user import UserOut
 from app.database.index import decode_user, get_db
 from app.services.budget_service import BudgetService
@@ -43,6 +44,7 @@ async def upload_file(files: list[UploadFile] = File(...),
     except Exception as e:
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @router.post("/analyze/{session_id}")
 def analyze(session_id: str):
@@ -88,3 +90,55 @@ async def session(session_id: str, db: Session = Depends(get_db), response_model
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="Something went wrong while creating the account ")
+
+
+@router.get('/insights/{session_id}', response_model=list[SessionInsightOut], status_code=status.HTTP_200_OK)
+async def insights(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionService(db=db)
+        insights = service.get_insights(session_id)
+        return insights
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+
+@router.get('/swot/{session_id}', response_model=list[SessionSwotOut], status_code=status.HTTP_200_OK)
+async def swot(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionService(db=db)
+        return service.get_swot(session_id)
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+
+@router.get('/financial-position/{session_id}', status_code=status.HTTP_200_OK, response_model=FinancialProfileDataIn)
+async def spending_profile(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionTransactionService(db=db)
+        return service.calculate_financial_position(session_id)
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+
+@router.get('/savings-potential/{session_id}', status_code=status.HTTP_200_OK,
+            response_model=List[SessionSavingsPotentialOut])
+async def savings_potential(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionService(db=db)
+        return service.get_savings_potentials(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
