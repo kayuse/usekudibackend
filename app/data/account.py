@@ -11,6 +11,7 @@ from app.data.user import UserOut
 
 load_dotenv(override=True)
 
+
 class AccountCreate(BaseModel):
     account_name: str
     account_number: str
@@ -19,14 +20,17 @@ class AccountCreate(BaseModel):
     fetch_method: str
     currency: str
 
+
 class AccountExchangeCreate(BaseModel):
     account_id: int
     exchange_code: str
 
+
 class AccountExchangeOut(BaseModel):
     id: int
     account_id: str
-    
+
+
 class BankOut(BaseModel):
     bank_id: int
     bank_name: str
@@ -37,6 +41,7 @@ class BankOut(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class BankCreate(BaseModel):
     bank_name: str
@@ -56,7 +61,7 @@ class TransactionSearch(BaseModel):
     start_date: datetime  # ISO format date string
     end_date: datetime  # ISO format date string
     account_id: Optional[int] = None  # Optional account ID to filter transactions
-    text : Optional[str] = None  # Optional text to search in transaction descriptions
+    text: Optional[str] = None  # Optional text to search in transaction descriptions
     category_id: Optional[int] = None  # Optional category ID to filter transactions
     skip: int = 0  # Number of records to skip (for pagination)
     limit: int = 200  # Maximum number of records to return (for pagination)
@@ -70,9 +75,10 @@ class AccountLinkData(BaseModel):
     scope: Optional[str] = "auth"
     institution_id: str
     institution_auth_method: Optional[str] = "internet_banking"
-    meta_ref : Optional[str] = str(uuid.uuid4().hex)
+    meta_ref: Optional[str] = str(uuid.uuid4().hex)
     redirect_url: Optional[str] = os.getenv('REDIRECT_URL', 'https://003f03833122.ngrok-free.app/complete')
-    
+
+
 class AccountCreateOut(BaseModel):
     id: int
     account_name: str
@@ -85,8 +91,9 @@ class AccountCreateOut(BaseModel):
     bank: BankOut = None
     account_type: str = None
     link_account_response: Optional[MonoAccountLinkData] = None  # Response from linking account
+
     class Config:
-        from_attributes = True 
+        from_attributes = True
 
 
 class AccountOut(BaseModel):
@@ -100,7 +107,8 @@ class AccountOut(BaseModel):
     bank_id: int
     bank: Optional[BankOut] = None
     account_type: Optional[str] = None
-        
+
+
 class TransactionOut(BaseModel):
     id: int
     account_id: int
@@ -111,8 +119,9 @@ class TransactionOut(BaseModel):
     transaction_type: str  # e.g., 'credit', 'debit'
     description: Optional[str] = None
     category_id: Optional[int] = None  # Optional category ID for the transaction
-    category : Optional[CategoryOut] = None  # Optional category object
-    account : AccountOut = None
+    category: Optional[CategoryOut] = None  # Optional category object
+    account: AccountOut = None
+
     class Config:
         from_attributes = True
 
@@ -129,33 +138,48 @@ class AccountDetailsOut(BaseModel):
     class Config:
         from_attributes = True
 
+
 class TransactionCategoryOut(BaseModel):
     category_id: int
     category_name: str
-    category_icon :str
+    category_icon: Optional[str] = None
     amount: float
 
+
+class TransactionWeekCategoryOut(BaseModel):
+    week_starting: str
+    week_ending: str
+    categories: list[TransactionCategoryOut]
+
+
+class WeeklyTrend(BaseModel):
+    income_trend : list[TransactionWeekCategoryOut]
+    expense_trend : list[TransactionWeekCategoryOut]
+
+
 class TransactionAverage(BaseModel):
-    average_in : float
-    average_out : float
+    average_in: float
+    average_out: float
+
 
 class BudgetOut(BaseModel):
-
     id: int
     user_id: int
     user: Optional[UserOut] = None
     amount: float
     category_id: Optional[int] = None
-    category : Optional[CategoryOut] = None
+    category: Optional[CategoryOut] = None
 
     class Config:
         orm_mode = True
         from_attributes = True
 
+
 class BudgetCreate(BaseModel):
     name: str
     category_id: int
     amount: float
+
 
 class BudgetInsightOut(BaseModel):
     budget_name: str

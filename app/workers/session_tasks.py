@@ -7,12 +7,9 @@ import traceback
 from app.data.session import SessionAccountOut
 from app.database.index import get_db
 from app.models.session import SessionAccount, Session, SessionFile, SessionTransaction
-from app.services.cache_service import get_cache, set_cache, publish
 from app.services.session_advice_service import SessionAdviceService
 from app.services.session_ai_service import SessionAIService
-from app.services.session_chat_service import SessionChatService
 from app.services.session_transaction_service import SessionTransactionService
-from app.workers.celery_app import celery_app
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)

@@ -1,15 +1,19 @@
+import traceback
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from typing import List
 from sqlalchemy.orm import Session
 from websocket import WebSocket
 
-from app.data.account import TransactionOut, TransactionSearch, TransactionCategoryOut, BudgetCreate, BudgetOut
+from app.data.account import TransactionOut, TransactionSearch, TransactionCategoryOut, BudgetCreate, BudgetOut, \
+    TransactionWeekCategoryOut, WeeklyTrend
 from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, IncomeFlowOut, \
-    SessionInsightOut, SessionSwotOut, SpendingProfileOut, FinancialProfileDataIn, SessionSavingsPotentialOut
+    SessionInsightOut, SessionSwotOut, SpendingProfileOut, FinancialProfileDataIn, SessionSavingsPotentialOut, \
+    SessionBeneficiaryOut, SessionTransactionOut
 from app.data.user import UserOut
 from app.database.index import decode_user, get_db
 from app.services.budget_service import BudgetService
+from app.services.session_advice_service import SessionAdviceService
 from app.workers.session_tasks import analyze_transactions, analyze_payments
 from app.services.session_service import SessionService
 from app.services.session_transaction_service import SessionTransactionService
@@ -137,6 +141,64 @@ async def savings_potential(session_id: str, db: Session = Depends(get_db)):
     try:
         service = SessionService(db=db)
         return service.get_savings_potentials(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+@router.post('/regenerate/{session_id}', status_code=status.HTTP_200_OK)
+async def regenerate(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionService(db=db)
+        result = await service.retry_process_statements(session_id)
+        return {"result": result}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+@router.get('/weekly-trend/{session_id}', status_code=status.HTTP_200_OK, response_model=WeeklyTrend)
+async def weekly_income_report(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionTransactionService(db=db)
+        return service.calculate_weekly_trend(session_id)
+    except ValueError as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+@router.get('/beneficiaries/{session_id}', status_code=status.HTTP_200_OK, response_model=list[SessionBeneficiaryOut])
+async def beneficiaries(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionTransactionService(db=db)
+        return service.get_beneficiaries(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+@router.get('/transfers/{session_id}', status_code=status.HTTP_200_OK, response_model=list[SessionTransactionOut])
+async def transfers(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionTransactionService(db=db)
+        return service.get_transfers(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+@router.get('/recurring-expenses/{session_id}', status_code=status.HTTP_200_OK)
+async def recurring_expenses(session_id: str, db: Session = Depends(get_db)):
+    try:
+        service = SessionAdviceService(db_session=db)
+        return service.get_recurring_expenses(session_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:

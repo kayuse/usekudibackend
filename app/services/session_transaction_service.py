@@ -5,17 +5,18 @@ from datetime import datetime, timedelta
 import json
 import time
 from dateutil.relativedelta import relativedelta
+from collections import defaultdict
 
 from dotenv import load_dotenv
 from sqlalchemy import text, select, func, cast
 import numpy as np
 import statistics as stats
 
-from app.data.account import TransactionCategoryOut
+from app.data.account import TransactionCategoryOut, TransactionWeekCategoryOut, WeeklyTrend
 from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut, \
-    FinancialProfileDataIn, SpendingProfileOut, SessionTransactionOut, SessionAccountOut
+    FinancialProfileDataIn, SpendingProfileOut, SessionTransactionOut, SessionAccountOut, SessionBeneficiaryOut
 from app.models.account import Category, Account
-from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel
+from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel, SessionBeneficiary
 
 from app.services.ai_service import AIService
 from app.services.mono_service import MonoService
@@ -336,6 +337,115 @@ class SessionTransactionService:
 
         return data
 
+    def get_income_by_category_by_week(self, account_ids: list[int]) -> list[TransactionWeekCategoryOut]:
+        six_day_interval = text("INTERVAL '6 days'")
+        week_start = func.date_trunc('week', SessionTransaction.date).label('week_start')
+        week_end = (func.date_trunc('week', SessionTransaction.date) + six_day_interval).label(
+            'week_end')
+
+        stmt = (
+            select(
+                week_start,
+                week_end,
+                Category.name.label('category_name'),
+                Category.id.label('category_id'),
+                func.sum(SessionTransaction.amount).label("total_amount")
+            )
+            .join(SessionTransaction.category)
+            .where(
+                func.lower(func.trim(SessionTransaction.transaction_type)) == 'credit',
+                SessionTransaction.account_id.in_(account_ids)
+            )
+            .group_by(week_start, week_end, Category.id, Category.name)
+            .order_by(week_start)
+        )
+
+        results = self.db.execute(stmt).all()
+
+        # Group results by week
+        weekly_data = defaultdict(list)
+        week_dates = {}
+
+        for row in results:
+            week_key = row.week_start.strftime("%Y-%m-%d")
+            category = TransactionCategoryOut(
+                category_id=row.category_id,
+                category_name=row.category_name,
+                amount=float(row.total_amount)
+            )
+            weekly_data[week_key].append(category)
+            week_dates[week_key] = row.week_end.strftime("%Y-%m-%d")
+
+        # Convert grouped dict to list
+        data = [
+            TransactionWeekCategoryOut(
+                week_starting=week_start,
+                week_ending=week_dates[week_start],
+                categories=categories
+            )
+            # {
+            #     "week_start": week_start,
+            #     "week_end": week_dates[week_start],
+            #     "categories": categories
+            # }
+            for week_start, categories in weekly_data.items()
+        ]
+
+        print(f"Found {len(data)} weeks of income summary.")
+        return data
+
+    def get_expense_by_category_by_week(self, account_ids: list[int]) -> list[TransactionWeekCategoryOut]:
+        six_day_interval = text("INTERVAL '6 days'")
+        week_start = func.date_trunc('week', SessionTransaction.date).label('week_start')
+        week_end = (func.date_trunc('week', SessionTransaction.date) + six_day_interval).label(
+            'week_end')
+
+        stmt = (
+            select(
+                week_start,
+                week_end,
+                Category.name.label('category_name'),
+                Category.id.label('category_id'),
+                func.sum(SessionTransaction.amount).label("total_amount")
+            )
+            .join(SessionTransaction.category)
+            .where(
+                func.lower(func.trim(SessionTransaction.transaction_type)) == 'debit',
+                SessionTransaction.account_id.in_(account_ids)
+            )
+            .group_by(week_start, week_end, Category.id, Category.name)
+            .order_by(week_start)
+        )
+
+        results = self.db.execute(stmt).all()
+
+        # Group results by week
+        weekly_data = defaultdict(list)
+        week_dates = {}
+
+        for row in results:
+            week_key = row.week_start.strftime("%Y-%m-%d")
+            category = TransactionCategoryOut(
+                category_id=row.category_id,
+                category_name=row.category_name,
+                amount=float(row.total_amount)
+            )
+            weekly_data[week_key].append(category)
+            week_dates[week_key] = row.week_end.strftime("%Y-%m-%d")
+
+        # Convert grouped dict to list
+        data = [
+            TransactionWeekCategoryOut(
+                week_starting=week_start,
+                week_ending=week_dates[week_start],
+                categories=categories
+            )
+            for week_start, categories in weekly_data.items()
+        ]
+
+        print(f"Found {len(data)} weeks of income summary.")
+        return data
+
     def get_expenses_by_category(self, account_ids: list[int]) -> list[TransactionCategoryOut]:
         stmt = (
             select(
@@ -363,6 +473,17 @@ class SessionTransactionService:
             )
 
         return data
+
+    def calculate_weekly_trend(self, session_id: str) -> WeeklyTrend:
+
+        session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+        accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).all()
+        account_ids = [account.id for account in accounts]
+
+        income_trend = self.get_income_by_category_by_week(account_ids)
+        expense_trend = self.get_expense_by_category_by_week(account_ids)
+
+        return WeeklyTrend(income_trend=income_trend, expense_trend=expense_trend)
 
     def calculate_expense_risk(self, transactions: list[SessionTransactionOut]) -> float:
 
@@ -483,7 +604,7 @@ class SessionTransactionService:
         return [SessionTransactionOut.from_orm(transaction) for transaction in transactions]
 
     def get_category_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str,
-                                               ) -> list[TransactionCategoryOut]:
+                                                ) -> list[TransactionCategoryOut]:
 
         stmt = (
             select(
@@ -515,3 +636,43 @@ class SessionTransactionService:
             )
 
         return data
+
+    def get_beneficiaries(self, session_id: str) -> list[SessionBeneficiaryOut]:
+        session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+        beneficiaries = self.db.query(SessionBeneficiary).filter(
+            SessionBeneficiary.session_id == session_record.id).all()
+
+        return [SessionBeneficiaryOut.model_validate(b) for b in beneficiaries]
+
+    def get_transfers(self, session_id: str, limit: int = 10) -> list[SessionTransactionOut]:
+        session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+        accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).all()
+        account_ids = [account.id for account in accounts]
+
+        transactions = self.db.query(SessionTransaction).filter(
+            SessionTransaction.account_id.in_(account_ids),
+            func.lower(func.trim(SessionTransaction.transaction_type)) == 'debit'
+        ).all()
+
+        return [SessionTransactionOut.model_validate(t) for t in
+                sorted(transactions, key=lambda x: x.amount, reverse=True)[:limit]]
+
+    def get_recurring_payments(self, session_id: str, limit: int = 10) -> list[SessionTransactionOut]:
+        session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+        beneficiary = self.db.query(SessionModel).filter(SessionModel.session_id == session_record.id).all()
+
+        transactions = self.db.query(SessionTransaction).filter(
+            SessionTransaction.account_id.in_(account_ids),
+            func.lower(func.trim(SessionTransaction.transaction_type)) == 'debit'
+        ).all()
+
+        description_counts = defaultdict(int)
+        for t in transactions:
+            description_counts[t.description] += 1
+
+        recurring_descriptions = {desc for desc, count in description_counts.items() if count > 1}
+
+        recurring_transactions = [t for t in transactions if t.description in recurring_descriptions]
+
+        return [SessionTransactionOut.model_validate(t) for t in
+                sorted(recurring_transactions, key=lambda x: x.amount, reverse=True)[:limit]]

@@ -9,8 +9,8 @@ from app.models.session import SessionTransaction, SessionAccount
 
 class SessionCreate(BaseModel):
     email: str
-    customer_type : str
-    name : str
+    customer_type: str
+    name: str
 
 
 class SessionOut(BaseModel):
@@ -26,15 +26,17 @@ class SessionOut(BaseModel):
         "from_attributes": True
     }
 
+
 class SessionInsightOut(BaseModel):
-    title : str
+    title: str
     priority: str
     insight_type: str
-    insight : str
+    insight: str
     session_id: int
     model_config = {
         "from_attributes": True
     }
+
 
 class SessionSwotOut(BaseModel):
     analysis: str
@@ -43,6 +45,7 @@ class SessionSwotOut(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
 
 class SessionAccountOut(BaseModel):
     id: int
@@ -88,13 +91,13 @@ class AccountExchangeSessionCreate(BaseModel):
 
 class Transaction(BaseModel):
     transactionDate: Optional[datetime] = Field(...,
-                                 description="Date in YYYY-MM-DD h:i:s format use 12am as default time if time not found")
+                                                description="Date in YYYY-MM-DD h:i:s format use 12am as default time if time not found")
     transactionId: Optional[str] = Field(None, description="Transaction reference/ID if present")
     description: Optional[str] = Field(..., description="Transaction Description or Details if present")
     transactionType: Optional[str] = Field(...,
-                                 description="Transaction Type it's either Debit or Credit. You can use the Amount Field to determine the type of transaction")
+                                           description="Transaction Type it's either Debit or Credit. You can use the Amount Field to determine the type of transaction")
     amount: Optional[float] = Field(...,
-                          description="Transaction amount, It could also be in different columns as Withdrawal and Deposit")
+                                    description="Transaction amount, It could also be in different columns as Withdrawal and Deposit")
     balance: Optional[float] = Field(None, description="Balance after the transaction")
 
 
@@ -119,10 +122,10 @@ class IncomeFlowOut(BaseModel):
     net_income: float
 
 
-
 class SessionStatusOut(BaseModel):
     session_id: str
     status: str
+
 
 class TransactionDataOut(BaseModel):
     transactions: list[SessionTransactionOut]
@@ -136,6 +139,7 @@ class RiskOut(BaseModel):
     volatility_risk: float
     compliance_risk: Optional[int] = 0
 
+
 class IncomeCategoryOut(BaseModel):
     category_name: str
     category_id: int
@@ -147,6 +151,7 @@ class SpendingProfileOut(BaseModel):
     savings_ratio: float
     budget_conscious: float
 
+
 class SessionSavingsPotentialOut(BaseModel):
     potential: str
     amount: float
@@ -155,6 +160,17 @@ class SessionSavingsPotentialOut(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class SessionBeneficiaryOut(BaseModel):
+    beneficiary: str
+    total_amount: float
+    transaction_count: int
+    session_id: int
+    model_config = {
+        "from_attributes": True
+    }
+
 
 class FinancialProfileDataIn(BaseModel):
     session_id: str

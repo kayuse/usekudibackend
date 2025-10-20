@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.data.account import AccountExchangeCreate, TransactionOut
 from app.models.account import Bank, Transaction
 from app.models.session import Session as SessionModel, SessionAccount, SessionTransaction, SessionFile, SessionInsight, \
-    SessionSwot, SessionSavingsPotential
+    SessionSwot, SessionSavingsPotential, SessionBeneficiary
 
 from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, \
     SessionInsightOut, SessionSwotOut, SessionSavingsPotentialOut
@@ -76,7 +76,10 @@ class SessionService:
             file_paths = await self.upload_service.upload_to_path(files)
             session_files: List[int] = []
             for index, file_path in enumerate(file_paths):
-                session_file = SessionFile(file_path=file_path, session_id=session_record.id, password=None)
+                session_file = SessionFile(file_path=file_path,
+                                           session_id=session_record.id,
+                                           bank_id=bank_ids[index],
+                                           password=None)
                 self.db.add(session_file)
                 self.db.commit()
                 self.db.refresh(session_file)
@@ -86,6 +89,31 @@ class SessionService:
             return True
         except Exception as e:
             raise ValueError(f"Error processing statements: {str(e)}")
+
+    async def retry_process_statements(self, session_id: str) -> bool:
+        try:
+            session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
+            session_files = self.db.query(SessionFile).filter(SessionFile.session_id == session_record.id).all()
+            accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).all()
+            account_ids = [a.id for a in accounts]
+            file_ids = [sf.id for sf in session_files]
+            bank_ids = [sf.bank_id for sf in session_files]
+            # delete sessionsavings, sessionaccounts, sessiontransactions, sessioninsights, sessionswots, sessiobeneficiaries
+            print("Deleting previous session data for retry...")
+            self.db.query(SessionSavingsPotential).filter(
+                SessionSavingsPotential.session_id == session_record.id).delete()
+            self.db.query(SessionSwot).filter(SessionSwot.session_id == session_record.id).delete()
+            self.db.query(SessionInsight).filter(SessionInsight.session_id == session_record.id).delete()
+            self.db.query(SessionTransaction).filter(
+                SessionTransaction.account_id.in_(account_ids)).delete()
+            self.db.query(SessionAccount).filter(SessionAccount.session_id == session_record.id).delete()
+            self.db.query(SessionBeneficiary).filter(SessionBeneficiary.session_id == session_record.id).delete()
+            self.db.commit()
+            print("Deleted previous session data for retry.")
+            process_statements.delay(session_id, file_ids, bank_ids)
+            return True
+        except Exception as e:
+            raise ValueError(f"Error retrying processing statements: {str(e)}")
 
     def get_session(self, session_id: str) -> SessionOut:
         try:

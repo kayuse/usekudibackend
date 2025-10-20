@@ -122,6 +122,7 @@ class SessionFile(Base):
     __tablename__ = 'session_files'
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    bank_id = Column(Integer, ForeignKey("banks.id"), nullable=True)
     password = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=func.now())
     file_path = Column(String(200), nullable=False)

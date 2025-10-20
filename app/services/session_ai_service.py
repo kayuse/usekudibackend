@@ -164,74 +164,60 @@ class SessionAIService:
                              "income_categories", "spending_categories"],
             partial_variables={"format_instructions": format_instructions},
             template="""
-                           You are a financial assistant that analyzes transaction data. 
-                           Your goal is to provide clear, personalized insights from a list of transactions. 
-                           Always be concise, use simple language, and make the insights actionable.
-                           
-                           Here is the customer's Income/Outflow Profile
+                        You are a concise financial analyst for individual customers. 
+                        Use the input data to produce a focused, predictive, and actionable 360° overview.
+                         Prioritize facts, numbers, and short prescriptive recommendations. 
+                         Avoid repeating generic risk buzzwords unless you provide a specific implication and an action.
                         
-                           Inflow: {inflow}
-                           Outflow: {outflow}
-                           Closing Balance: {closing_balance}
-                           Net Income: {net_income}
+                        INPUT:
+                        Inflow: {inflow}
+                        Outflow: {outflow}
+                        Closing Balance: {closing_balance}
+                        Net Income: {net_income}
                         
-                           Here is the customer's financial Risk profile data
-                           
-                           Liquidity Risk: {liquidity_risk}
-                           Concentration Risk: {concentration_risk}
-                           Expense Risk: {expense_risk}
-                           Volatility Risk: {volatility_risk}
-                           
-                           Here is the Customers Spending Profile
-                           
-                           Spending Ratio: {spending_ratio}
-                           Savings Ratio: {savings_ratio}
-                           Budget Conscious Ratio: {budget_ratio}
-                           
-                           Here is the Customer's Income Categories Breakdown
+                        Liquidity Risk: {liquidity_risk}
+                        Concentration Risk: {concentration_risk}
+                        Expense Risk: {expense_risk}
+                        Volatility Risk: {volatility_risk}
+                        
+                        Spending Ratio: {spending_ratio}
+                        Savings Ratio: {savings_ratio}
+                        Budget Conscious Ratio: {budget_ratio}
+                        
+                        Income Categories: {income_categories}
+                        Spending Categories: {spending_categories}
+                        
+                        Additional (optional): include a short time series of past weekly or monthly totals if available:
+                        
+                        TASK:
+                        Produce a compact set of insights that together form a 360° assessment. Each insight must be a single JSON object with keys: title, description, priority, type, action. Return a JSON array of insight objects (no text outside the array).
+                        
+                        Required content to include somewhere among the insights (at least once):
+                        1. Net totals: clearly state Total Income and Total Expenses and Net Income using the input currency.
+                        2. Biggest spending categories/merchants (top 3) with amounts.
+                        3. Any unusual or one-off large transactions (flag > 3× median transaction or > X% of monthly income).
+                        4. Spending vs Saving balance: current savings ratio and suggested safe target with numeric goal.
+                        5. Cash runway: how many days/weeks of spending the closing balance covers (use average daily/weekly outflow).
+                        6. Short-term forecast: a 1–3 month expense forecast (e.g., "Estimated monthly expense next month: ₦X ±Y%") using trend in provided historical_series or recent growth rate.
+                        7. Top 2 high-impact recommendations (e.g., reduce X category by Y% to save ₦Z/month).
+                        8. One alert if Expense Risk or Liquidity Risk is above your thresholds (explain concretely what that implies).
+                        9. One actionable behavior change (automations, subscriptions to cancel, target emergency fund).
+                        
+                        FORMAT & STYLE RULES:
+                        - Output MUST be a JSON array only. No extra text, no explanations.
+                        - Each array element MUST be an object with exactly these keys:
+                          - "title": short headline (max 6 words)
+                          - "description": one or two sentences with numbers (use the same currency as input)
+                          - "priority": one of "low", "medium", "high"
+                          - "type": one of "recommendation", "alert", "forecast", "spending trend"
+                          - "action": a short next step for the user or null
+                        - Use exact numeric values where possible (e.g., "Cash runway: 18 days" or "Reduce food by 20% → save ₦4,500/month").
+                        - If historical_series is empty, compute short-term forecast from recent growth rate; if growth rate is unstable use 3-week moving average.
+                        - Do NOT repeat the same point across multiple insights; each insight must add unique value.
+                        - Keep descriptions simple, direct, and actionable.
+                        
+                        END
 
-                          {income_categories}
-                          
-                          Here is the Customer's Spending Categories Breakdown
-
-                          {spending_categories} 
-    
-                           Based on this data, generate insights including but not limited to:
-                           - Total income (credits) and total expenses (debits)
-                           - Biggest spending categories or merchants
-                           - Any unusual or large transactions
-                           - Spending vs saving balance
-                           - Income sources and their stability
-                           - Suggestions for better financial health
-                           - Cash Runway
-                           - Future Expense Prediction
-                           - Seasonal Patterns
-    
-                           You may also add any other useful observations, such as:
-                           - Spending trends over time
-                           - Changes compared to previous periods
-                           - Savings opportunities
-                           - Risky or suspicious transactions
-                           - Lifestyle Analysis
-    
-                           Important output rules:
-                           - Each insight must be a JSON object with the following fields:
-                             - title (short headline of the insight)
-                             - description (short explanation in simple language)
-                             - priority (one of: "low", "medium", "high")
-                             - type (one of: "recommendation", "alert", "forecast", "spending trend")
-                             - action (nullable string, an optional next step for the user, can be null)
-                           - Do not add explanations, comments, or any text outside the JSON.
-                           - Use only the same currency shown in the transaction documents (e.g., ₦ for Naira).
-                           - Do not convert to USD ($) or any other currency.
-                           - Return the result strictly as a JSON list of insights using this format:
-                           {format_instructions}
-                           Each element MUST be an object with exactly these keys: 
-                               - "title" (string)
-                               - "description" (string)
-                               - "priority" (one of "low", "medium", "high")
-                               - "type" (one of "recommendation", "alert", "forecast", "spending trend")
-                               - "action" (string or null)
                    """)
 
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
@@ -466,47 +452,57 @@ class SessionAIService:
             input_variables=["insights", "swot", "savings_potential", "customer_type"],
             partial_variables={"format_instructions": format_instructions},
             template="""
-                    You are a financial assistant that analyzes transaction data.  
-                    Your goal is to provide clear overall assessments for the customer
-                    Always be concise, use simple language, and make the insights actionable.  
-                    
-                    Here is the customer's Insights:  
-                    {insights}  
-                    
-                    Here is the customer's SWOT Analysis:  
-                    {swot}  
-                    
-                    Here is the Customer's Savings Potentials:  
-                    {savings_potential}  
-                    
-                    Here is the Customer Type:  
-                    {customer_type}  
-                    
-                    Your Task:  
-                    Based on all this data, generate an **Overall Assessment Analysis** — a financial profile of the customer.  
-                    
-                    
-                    Always put into consideration:  
-                    - The Customer Type (Individual, Business, Church, NGO, etc.)  
-                    - Spending trends over time  
-                    - Recurring payments or subscriptions  
-                    - Changes compared to previous periods  
-                    - Savings opportunities  
-                    - Risky or suspicious transactions  
-                    - Risk Scores  
-                    - Customer Spending Profiles  
-                    
-                    Important Output Rules: 
-                    
-                    Let the Title be like a summary of the actual Assessment.
+                        You are a personal financial assistant providing a clear, insightful summary directly to the customer. 
+                        Your role is to create an “Overall Assessment Analysis” — a personalized financial overview that feels 
+                        like a professional yet friendly financial review. 
+                        
+                        You are NOT writing about the customer in the third person. 
+                        Always speak directly to them using “you” and “your”.
+                        
+                        You are a financial analyst that produces holistic summaries of customers' financial behavior and health. 
+                        You receive multiple analysis inputs (Insights, SWOT, Savings Potentials, Customer Type) and must create 
+                        a single concise “Overall Assessment Analysis” — a 360° view of the customer’s financial profile. 
+                        
+                        Focus on synthesis, not repetition. 
+                        Show clear reasoning, trends, and predictions in simple language that anyone can understand. 
+                        Always sound professional, factual, and human.
+                        
+                        INPUT:
+                        Customer Insights:
+                        {insights}
+                        
+                        Customer SWOT Analysis:
+                        {swot}
+                        
+                        Customer Savings Potentials:
+                        {savings_potential}
+                        
+                        Customer Type:
+                        {customer_type}
+                        
+                        TASK:
+                        Using all the inputs above, produce an overall assessment that:
+                        1. Summarizes the customer’s financial personality and key strengths/weaknesses.
+                        2. Highlights noticeable patterns in spending, saving, and inflow stability.
+                        3. Identifies changes compared to previous periods (if trends exist).
+                        4. Describes risk posture (e.g., liquidity, expense, volatility) with brief implications.
+                        5. Predicts possible near-term outcomes (e.g., improving stability, likely overspending, cash shortfall).
+                        6. Mentions 1–2 actionable recommendations that align with the customer’s type (individual, business, church, NGO).
+                        7. Ends with an encouraging or advisory tone, not just a report.
+                        
+                        OUTPUT RULES:
+                        - Return ONLY a single JSON object (no arrays, no extra text).
+                        - The object MUST have exactly these two keys:
+                          - "title": (short, headline-style summary of the assessment; e.g. "Stable but Overspending in Essentials")
+                          - "assessment": (1–3 paragraphs summarizing the customer’s financial outlook and actionable insights)
+                        - Do NOT include savings_potentials or any other fields.
+                        - Keep the tone analytical but empathetic, with clear insight into future behavior or risks.
+                        - Use consistent currency and avoid technical jargon.
+                        - Be specific, not generic (“Spending increased by 12% over 3 months” instead of “Spending went up”).
+                        - Never include formatting, markdown, or additional commentary.
+                        
+                        {format_instructions}
 
-                    {format_instructions}
-                    
-                    - Always return ONLY a JSON object with exactly these two fields:
-                      "title": "string"
-                      "assessment": "string"
-                    - Do not include savings_potentials or any other fields.
-                      
                      """)
 
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)

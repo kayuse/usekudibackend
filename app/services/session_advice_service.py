@@ -96,7 +96,7 @@ class SessionAdviceService:
         self.db.commit()
         return True
 
-    def get_recurring_expenses(self, session_id: str) -> bool:
+    def get_recurring_expenses(self, session_id: str) -> list[dict]:
         """
         Detect recurring expenses from a list of transaction objects.
         Includes frequency detection (daily, weekly, monthly, etc.)
@@ -164,8 +164,19 @@ class SessionAdviceService:
         recurring.drop(columns=["dates"], inplace=True)
 
         data = recurring.sort_values("tx_count", ascending=False)
-        print(data)
-        return True
+        response = []
+        for index, row in data.iterrows():
+            response.append({
+                "description": row['description'],
+                "amount_rounded": row['amount_rounded'],
+                "tx_count": row['tx_count'],
+                "first_date": row['first_date'],
+                "last_date": row['last_date'],
+                "avg_amount": row['avg_amount'],
+                "frequency": row['frequency']
+            })
+
+        return response
 
     def get_top_transfer_beneficiaries(self, session_id: str):
         session_record: SessionModel = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
