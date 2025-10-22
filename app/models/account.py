@@ -84,7 +84,6 @@ class Transaction(Base):
     category = relationship("Category", backref="transactions", foreign_keys=[category_id])
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    embedding = Column(Vector(1536))
 
     def __repr__(self):
         return f"<Transaction(transactionid={self.id}, accountid={self.account_id}, amount={self.amount}, transaction_type='{self.transaction_type}', date='{self.date}', balance_after_transaction='{self.balance_after_transaction}')>"
