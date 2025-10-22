@@ -22,6 +22,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.routers import transaction
 from app.services.session_advice_service import SessionAdviceService
+from app.services.session_service import SessionService
 from app.services.session_transaction_service import SessionTransactionService
 from app.services.transaction_service import TransactionService
 from app.util.chroma_db import get_chroma_db
@@ -181,6 +182,24 @@ class SessionChatService:
                 "If the category ID is unknown, call the get_categories tool first to get available categories."
             )
         )
+        get_transactions_by_insights = StructuredTool.from_function(
+            func=self.get_insights,
+            name="get_insights",
+            description=(
+                "Retrieve financial insights for the current session using the Session ID. Make Sure you fetch the Session ID from the get_session tool first."
+                "Use this tool to get personalized financial insights based on the user's transaction history and spending patterns."
+            )
+        )
+
+        get_session = StructuredTool.from_function(
+            func=self.get_session,
+            name="get_session",
+            description=(
+                "Retrieve details about the current session"
+                "Use this tool to get information such as session id, name, email, overall assessment, processing status, and customer type."
+            )
+        )
+
         get_transactions_by_date_range_tool = StructuredTool.from_function(
             func=self.get_transactions_by_date_range,
             name="get_transactions_by_date_range",
@@ -204,7 +223,9 @@ class SessionChatService:
 
         tools = [sql_tool, semantic_tool, balance_tool, get_accounts_tool, top_beneficiaries_tool, income_category_tool,
                  expense_category_tool, category_tool, get_transaction_by_category_tool,
-                 get_transactions_by_date_range_tool, get_category_transactions_by_date_range_tool]
+                 get_transactions_by_date_range_tool, get_category_transactions_by_date_range_tool,
+                 get_transactions_by_insights, get_session]
+
         return tools
 
     def get_collection(self, db_name):
@@ -320,6 +341,21 @@ class SessionChatService:
             return f"No account found with ID {account_id}."
         return balance
 
+    def get_session(self):
+
+        return {
+            "session_id": self.session_model.id,
+            "session_identifier": self.session_model.identifier,
+            "session_name": self.session_model.name,
+            "session_email": self.session_model.email,
+            "session_overall_assessment_title": self.session_model.overall_assessment_title,
+            "session_overall_assessment": self.session_model.overall_assessment,
+            "session_processing_status": self.session_model.processing_status,
+            "session_customer_type": self.session_model.customer_type,
+            "insights": self.get_insights(session_id=self.session_model.id),
+            "swot_analysis": self.get_swot(session_id=self.session_model.id),
+        }
+
     def get_top_beneficiaries(self):
         beneficiaries = self.session_advice_service.get_session_beneficiaries(session_id=self.session_model.id)
         if not beneficiaries:
@@ -372,18 +408,48 @@ class SessionChatService:
         ]
 
     def get_transaction_by_category(self, category_id: int) -> list[dict]:
-        transactions = self.transaction_service.get_transaction_by_category(category_id)
+        accounts = self.get_accounts()
+        account_ids = [account['accountId'] for account in accounts]
+        transactions = self.transaction_service.get_transaction_by_category(category_id, account_ids)
         if not transactions:
             return []
         return [
             {
                 "transaction_id": t.transaction_id,
                 "amount": t.amount,
+                "description": t.description,
+                "Currency": t.currency,
                 "transaction_date": t.date,
                 "category_id": t.category_id,
                 "category_name": t.category.name,
             }
             for t in transactions
+        ]
+
+    def get_insights(self, session_id: int) -> list[dict]:
+        insights = self.session_advice_service.get_insights(session_id=session_id)
+        if not insights:
+            return []
+        return [
+            {
+                "title": insight.title,
+                "priority": insight.priority,
+                "insight_type": insight.insight_type,
+                "insight": insight.insight,
+            }
+            for insight in insights
+        ]
+
+    def get_swot(self, session_id: int) -> list[dict]:
+        swots = self.session_advice_service.get_swot(session_id=session_id)
+        if not swots:
+            return []
+        return [
+            {
+                "analysis": swot.analysis,
+                "swot_type": swot.swot_type,
+            }
+            for swot in swots
         ]
 
     def get_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str) -> list[dict]:
@@ -395,11 +461,12 @@ class SessionChatService:
                 "transaction_id": t.transaction_id,
                 "amount": t.amount,
                 "transaction_date": t.date,
+                "currency":t.currency,
                 "transaction_type": t.transaction_type,
                 "category_id": t.category_id,
                 "category_name": t.category.name,
             }
-            for t in transactions
+            for t in transactions[:50]
         ]
 
     def get_category_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str) -> list[

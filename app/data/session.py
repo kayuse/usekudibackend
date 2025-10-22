@@ -20,6 +20,7 @@ class SessionOut(BaseModel):
     email: str
     customer_type: Optional[str]
     processing_status: str
+    paid: Optional[bool]
     overall_assessment: Optional[str] = None
     overall_assessment_title: Optional[str] = None
     model_config = {
@@ -62,6 +63,7 @@ class SessionAccountOut(BaseModel):
 
 
 class SessionTransactionOut(BaseModel):
+    id: int
     amount: float
     account_id: int
     category_id: int
@@ -71,6 +73,7 @@ class SessionTransactionOut(BaseModel):
     date: datetime
     transaction_type: str
     description: str
+    currency: Optional[str]
 
     model_config = {
         "from_attributes": True
@@ -180,3 +183,17 @@ class FinancialProfileDataIn(BaseModel):
     expense_categories: list[TransactionCategoryOut]
     spending_profile: SpendingProfileOut
     transactions: TransactionDataOut
+
+
+class SessionPaymentData(BaseModel):
+    id: int
+    domain: str
+    reference: str
+    receipt_number: Optional[str]
+    amount: float
+
+
+class SessionPaymentResponse(BaseModel):
+    status: bool
+    message: str
+    data: SessionPaymentData

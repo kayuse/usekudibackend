@@ -591,8 +591,9 @@ class SessionTransactionService:
         categories = self.db.query(Category).all()
         return categories
 
-    def get_transaction_by_category(self, category_id: int) -> list[SessionTransactionOut]:
-        transactions = self.db.query(SessionTransaction).filter(SessionTransaction.category_id == category_id).all()
+    def get_transaction_by_category(self, category_id: int, account_ids: list[int]) -> list[SessionTransactionOut]:
+        transactions = self.db.query(SessionTransaction).filter(SessionTransaction.account_id.in_(account_ids),
+                                                                SessionTransaction.category_id == category_id).all()
         return [SessionTransactionOut.from_orm(transaction) for transaction in transactions]
 
     def get_transactions_by_date_range(self, account_ids: list[int], start_date: str, end_date: str) -> list[

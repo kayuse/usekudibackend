@@ -1,17 +1,22 @@
 import asyncio
+import json
 import re
+import tempfile
+from typing import Optional
 
+import fitz
 import pdfplumber
 from dotenv import load_dotenv
 from langchain.chains.llm import LLMChain
+import marker
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_openai import ChatOpenAI
+from openai import OpenAI, AsyncOpenAI
 from pdfminer.pdfdocument import PDFPasswordIncorrect, PDFException
 from pdfplumber.utils.exceptions import PdfminerException
-from posthog.ai.openai import OpenAI
 from sqlalchemy.orm import Session
-
+import pikepdf
 from app.data.session import Statement, BankData, FinancialProfileDataIn, SessionTransactionOut
 from app.data.transaction_insight import Insights, Insight, TransactionSWOTInsight, SavingsPotentials, SavingsPotential, \
     OverallAssessment
@@ -30,6 +35,7 @@ class SessionAIService:
     def __init__(self, session: Session):
         self.db = session
         self.ai_key = os.environ.get("CHAT_GPT_KEY")
+        self.client = AsyncOpenAI(api_key=self.ai_key)
 
     def is_encrypted(self):
         return self.ai_key is not None
@@ -39,6 +45,7 @@ class SessionAIService:
             statement_text=text,
             format_instructions=parser.get_format_instructions()
         )
+        print("Processing page {} with LLM {}".format(i, text))
         result = await llm.ainvoke(formatted_prompt)
         clean_output = re.sub(r'(\d+),(\d+)', r'\1\2', result.content)
         parsed_page: Statement = parser.parse(clean_output)
@@ -50,6 +57,7 @@ class SessionAIService:
                 # Successfully opened
                 file.password = password
                 self.db.commit()
+                self.db.refresh(file)
                 print("Unlocked {}".format(file.id))
                 return True
         except PDFPasswordIncorrect:
@@ -104,7 +112,10 @@ class SessionAIService:
             for i, page in enumerate(pdf.pages, 1):
                 print("Processing page {}".format(i))
                 text = page.extract_text()
-                tasks.append(self.process_page(i, text, parser, prompt, llm))
+
+                clean_text = re.sub(r'([A-Za-z])\1', r'\1', text)
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                tasks.append(self.process_page(i, clean_text, parser, prompt, llm))
 
             results = await asyncio.gather(*tasks)
 
@@ -122,6 +133,74 @@ class SessionAIService:
             print("Done processing page {}".format(i))
 
         return final_statement
+
+    async def read_pdf_directly(self, file) -> Optional[Statement]:
+        # 🔐 Try brute-forcing the password if locked
+        if self.is_pdf_locked(file):
+            print("PDF is locked. Attempting to unlock...")
+            for i in range(1, 10000000):
+                if self.unlock_pdf(file, str(i)):
+                    print(f"Unlocked PDF with password {i}")
+                    break
+
+        # If still locked, abort
+        if self.is_pdf_locked(file):
+            print("Failed to unlock PDF.")
+            return None
+        tasks = []
+        final_statement = Statement(transactions=[])
+        parser = PydanticOutputParser(pydantic_object=Statement)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             "You are a financial assistant. Extract structured fields from a bank statement. "
+             "Rules:\n"
+             "- All float fields must be plain numbers (e.g. 28989.95) without commas, spaces, or currency symbols.\n"
+             "- All date fields must strictly follow the format YYYY-MM-DD (ISO 8601).\n"
+             "- Only return valid JSON as described in the format instructions."),
+            ("user", "Here is some text from a bank statement:\n\n{statement_text}\n\n{format_instructions}")
+        ])
+        # Create a decrypted temp copy
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            with pikepdf.open(file.file_path, password=(file.password or "")) as pdf:
+                pdf.save(tmp_path)
+
+            llm = ChatOpenAI(model='gpt-4.1-mini', temperature=0, api_key=self.ai_key)
+            doc = fitz.open(tmp_path)
+
+            print("Number of pages:", len(doc))
+
+            for page in doc:
+                print("Processing page {}".format(page.number + 1))
+                text = page.get_text('text')
+                print(text)
+
+                clean_text = re.sub(r'([A-Za-z])\1', r'\1', text)
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                tasks.append(self.process_page(page.number + 1, clean_text, parser, prompt, llm))
+
+            results = await asyncio.gather(*tasks)
+
+            for i, parsed_page in sorted(results, key=lambda x: x[0]):
+                if i == 1:
+                    final_statement.accountName = parsed_page.accountName
+                    final_statement.accountNumber = parsed_page.accountNumber
+                    final_statement.accountCurrency = parsed_page.accountCurrency
+                    final_statement.accountBalance = parsed_page.accountBalance
+                final_statement.transactions.extend(parsed_page.transactions)
+                last_page_statement = parsed_page
+
+                if last_page_statement and last_page_statement.accountBalance and final_statement.accountBalance is None:
+                    final_statement.accountBalance = last_page_statement.accountBalance
+            print("Done processing page {}".format(i))
+            doc.close()
+            return final_statement
+
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def get_bank_id(self, bank_name: str) -> int:
         banks = self.db.query(Bank).filter(Bank.active == True).all()

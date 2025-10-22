@@ -16,10 +16,11 @@ import numpy as np
 from langchain_openai import OpenAIEmbeddings
 from requests import session
 
-from app.data.session import SessionTransactionOut
+from app.data.session import SessionTransactionOut, SessionInsightOut, SessionSwotOut
 from app.data.transaction_insight import OverallAssessment, ClusteredTransactionNames, TransactionBeneficiary, \
     TransactionBeneficial
-from app.models.session import Session as SessionModel, SessionTransaction, SessionAccount, SessionBeneficiary
+from app.models.session import Session as SessionModel, SessionTransaction, SessionAccount, SessionBeneficiary, \
+    SessionInsight, SessionSwot
 from langchain.prompts.prompt import PromptTemplate
 from sqlalchemy import text
 from langchain.agents import initialize_agent, Tool
@@ -440,3 +441,17 @@ class SessionAdviceService:
     def get_session_beneficiaries(self, session_id: int) -> list[SessionBeneficiary]:
         beneficiaries = self.db.query(SessionBeneficiary).filter(SessionBeneficiary.session_id == session_id).all()
         return beneficiaries
+
+    def get_insights(self, session_id: int) -> list[SessionInsightOut]:
+        try:
+            insights = self.db.query(SessionInsight).filter(SessionInsight.session_id == session_id).all()
+            return [SessionInsightOut.model_validate(s) for s in insights]
+        except Exception as e:
+            raise ValueError(f"Error getting insights: {str(e)}")
+
+    def get_swot(self, session_id: int) -> list[SessionSwotOut]:
+        try:
+            swots = self.db.query(SessionSwot).filter(SessionSwot.session_id == session_id).all()
+            return [SessionSwotOut.model_validate(s) for s in swots]
+        except Exception as e:
+            raise ValueError(f"Error getting swot: {str(e)}")

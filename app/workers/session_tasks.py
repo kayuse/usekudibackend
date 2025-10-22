@@ -31,7 +31,7 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
         for index, file_id in enumerate(files_id):
             print("Processing file {}".format(file_id))
             session_file = db.query(SessionFile).filter(SessionFile.id == file_id).first()
-            statement = await session_ai_service.read_pdf_statement(session_file)
+            statement = await session_ai_service.read_pdf_directly(session_file)
             if statement is None:
                 continue
             bank_id = bank_ids[index]

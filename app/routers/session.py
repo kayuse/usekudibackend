@@ -14,6 +14,7 @@ from app.data.user import UserOut
 from app.database.index import decode_user, get_db
 from app.services.budget_service import BudgetService
 from app.services.session_advice_service import SessionAdviceService
+from app.services.session_payment_service import SessionPaymentService
 from app.workers.session_tasks import analyze_transactions, analyze_payments
 from app.services.session_service import SessionService
 from app.services.session_transaction_service import SessionTransactionService
@@ -147,6 +148,7 @@ async def savings_potential(session_id: str, db: Session = Depends(get_db)):
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
 
+
 @router.post('/regenerate/{session_id}', status_code=status.HTTP_200_OK)
 async def regenerate(session_id: str, db: Session = Depends(get_db)):
     try:
@@ -158,6 +160,7 @@ async def regenerate(session_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
 
 @router.get('/weekly-trend/{session_id}', status_code=status.HTTP_200_OK, response_model=WeeklyTrend)
 async def weekly_income_report(session_id: str, db: Session = Depends(get_db)):
@@ -172,6 +175,7 @@ async def weekly_income_report(session_id: str, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
 
+
 @router.get('/beneficiaries/{session_id}', status_code=status.HTTP_200_OK, response_model=list[SessionBeneficiaryOut])
 async def beneficiaries(session_id: str, db: Session = Depends(get_db)):
     try:
@@ -182,6 +186,7 @@ async def beneficiaries(session_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
 
 @router.get('/transfers/{session_id}', status_code=status.HTTP_200_OK, response_model=list[SessionTransactionOut])
 async def transfers(session_id: str, db: Session = Depends(get_db)):
@@ -194,6 +199,7 @@ async def transfers(session_id: str, db: Session = Depends(get_db)):
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
 
+
 @router.get('/recurring-expenses/{session_id}', status_code=status.HTTP_200_OK)
 async def recurring_expenses(session_id: str, db: Session = Depends(get_db)):
     try:
@@ -204,3 +210,22 @@ async def recurring_expenses(session_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+
+
+@router.get("/verify-payment/{session_id}/{reference}")
+def verify_payment(session_id: str, reference: str, db: Session = Depends(get_db)):
+    """Verify payment with Paystack"""
+    try:
+        service = SessionPaymentService(db=db)
+        result = service.verify_payment(session_id, reference)
+        if result:
+            return {"status": "success", "message": "Payment verified successfully"}
+        else:
+            return {"status": "failed", "message": "Payment verification failed"}
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
+

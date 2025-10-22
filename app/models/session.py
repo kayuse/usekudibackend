@@ -18,6 +18,7 @@ class Session(Base):
     customer_type = Column(String(50), nullable=True, default='individual')
     overall_assessment = Column(String, nullable=True)
     overall_assessment_title = Column(String, nullable=True)
+    paid = Column(Boolean, nullable=True, default=False)
     session_accounts = relationship("SessionAccount", back_populates="session")
 
 
@@ -69,14 +70,27 @@ class SessionTransaction(Base):
     def __repr__(self):
         return f"<Transaction(transactionid={self.id}, accountid={self.account_id}, amount={self.amount}, transaction_type='{self.transaction_type}', date='{self.date}', balance_after_transaction='{self.balance_after_transaction}')>"
 
+
 SessionAccount.session_transactions = relationship("SessionTransaction", back_populates="session_account")
 SessionTransaction.session_account = relationship("SessionAccount", back_populates="session_transactions")
+
 
 class SessionPayment(Base):
     __tablename__ = 'session_payments'
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(500), nullable=False, unique=False)
     amount = Column(Float, nullable=False, default=0.0)
+
+
+class SessionPaymentStore(Base):
+    __tablename__ = 'session_payment_stores'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
+    payment_id = Column(Integer, ForeignKey("session_payments.id"), nullable=False)
+    payment_reference = Column(String(200), nullable=False)
+    amount = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
 class SessionInsight(Base):
@@ -95,6 +109,7 @@ class SessionInsight(Base):
 Session.session_insights = relationship("SessionInsight", back_populates="session")
 SessionInsight.session = relationship("Session", back_populates="session_insights")
 
+
 class SessionSwot(Base):
     __tablename__ = 'session_swots'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -103,6 +118,7 @@ class SessionSwot(Base):
     swot_type = Column(String, nullable=False)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
 
 Session.session_swots = relationship("SessionSwot", back_populates="session")
 SessionSwot.session = relationship("Session", back_populates="session_swots")
@@ -115,8 +131,10 @@ class SessionSavingsPotential(Base):
     amount = Column(Float, nullable=False)
     potential = Column(String, nullable=False)
 
+
 Session.session_savings_potentials = relationship("SessionSavingsPotential", back_populates="session")
 SessionSavingsPotential.session = relationship("Session", back_populates="session_savings_potentials")
+
 
 class SessionFile(Base):
     __tablename__ = 'session_files'
@@ -127,8 +145,10 @@ class SessionFile(Base):
     created_at = Column(DateTime, default=func.now())
     file_path = Column(String(200), nullable=False)
 
+
 Session.session_files = relationship("SessionFile", back_populates="session")
 SessionFile.session = relationship("Session", back_populates="session_files")
+
 
 class SessionBeneficiary(Base):
     __tablename__ = 'session_beneficiaries'
