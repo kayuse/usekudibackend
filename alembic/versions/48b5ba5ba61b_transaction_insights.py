@@ -51,7 +51,7 @@ def downgrade() -> None:
     op.create_table('langchain_pg_embedding',
     sa.Column('id', sa.VARCHAR(), autoincrement=False, nullable=False),
     sa.Column('collection_id', sa.UUID(), autoincrement=False, nullable=True),
-    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(), autoincrement=False, nullable=True),
+    # sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(), autoincrement=False, nullable=True),
     sa.Column('document', sa.VARCHAR(), autoincrement=False, nullable=True),
     sa.Column('cmetadata', postgresql.JSONB(astext_type=sa.Text()), autoincrement=False, nullable=True),
     sa.ForeignKeyConstraint(['collection_id'], ['langchain_pg_collection.uuid'], name=op.f('langchain_pg_embedding_collection_id_fkey'), ondelete='CASCADE'),
