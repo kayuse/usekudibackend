@@ -4,10 +4,12 @@ sh run_migration.sh
 sudo systemctl daemon-reload
 sudo systemctl stop fastapi
 sudo systemctl start fastapi
-sudo systemctl enable fastapi
-sudo systemctl status fastapi
-sudo systemctl daemon-reload
-sudo systemctl enable celery
-sudo systemctl enable celery-beat
+sudo systemctl stop celery
 sudo systemctl start celery
+sudo systemctl stop celery-beat
 sudo systemctl start celery-beat
+sudo systemctl status fastapi
+sudo systemctl status celery
+sudo systemctl status celery-beat
+sudo systemctl daemon-reload
+sudo service nginx restart
