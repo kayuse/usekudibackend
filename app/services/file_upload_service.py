@@ -1,6 +1,7 @@
 import base64
 import os
 import shutil
+import traceback
 import uuid
 from io import BytesIO
 from typing import List
@@ -91,6 +92,7 @@ class FileUploadService:
             raise CustomError("Invalid Credentials")
 
         except Exception as e:
+            traceback.print_exc()
             raise CustomError("Error Uploading File")
 
     def download_file_from_s3(self, file_key):
