@@ -38,15 +38,11 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
             print("Bank ID: {}".format(bank_id))
             if statement.accountName is None:
                 statement.accountName = "Unnamed Account"
-            if statement.accountType is None:
-                statement.accountType = "Unknown"
-            if statement.accountStatus is None:
-                statement.accountStatus = "Unknown"
             if statement.accountCurrency is None:
                 statement.accountCurrency = "NGN"
             if statement.accountNumber is None:
                 statement.accountNumber = "0000000000"
-                
+
             account = SessionAccount(account_name=statement.accountName,
                                      account_number=statement.accountNumber,
                                      current_balance=statement.accountBalance,
