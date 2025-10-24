@@ -136,7 +136,7 @@ class SessionAIService:
 
     async def read_pdf_directly(self, file) -> Optional[Statement]:
         # 🔐 Try brute-forcing the password if locked
-        if self.is_pdf_locked(file):
+        if self.is_pdf_locked(file) and file.password is None:
             print("PDF is locked. Attempting to unlock...")
             for length in range(1, 10):  # from 1-digit up to 9-digits
                 for i in range(10 ** length):
@@ -147,7 +147,7 @@ class SessionAIService:
                         break
 
         # If still locked, abort
-        if self.is_pdf_locked(file):
+        if self.is_pdf_locked(file) and file.password is None:
             print("Failed to unlock PDF.")
             return None
         tasks = []

@@ -1,7 +1,6 @@
 git pull
 pip install -r requirements.txt
 sh run_migration.sh
-sudo systemctl daemon-reload
 sudo systemctl stop fastapi
 sudo systemctl start fastapi
 sudo systemctl stop celery
