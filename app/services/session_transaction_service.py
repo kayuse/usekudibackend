@@ -233,7 +233,7 @@ class SessionTransactionService:
         transactions = transaction_data.transactions
         expenses = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'debit')
         income = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
-        ratio = (income / expenses) * 100
+        ratio = (expenses / income) * 100
         return min(ratio, 200.0)
 
     def get_savings_ratio(self, session_id: str) -> float:
