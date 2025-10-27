@@ -138,13 +138,18 @@ class SessionAIService:
         # 🔐 Try brute-forcing the password if locked
         if self.is_pdf_locked(file) and file.password is None:
             print("PDF is locked. Attempting to unlock...")
+            should_break = False
             for length in range(1, 10):  # from 1-digit up to 9-digits
                 for i in range(10 ** length):
                     s = str(i).zfill(length)
 
                     if self.unlock_pdf(file, str(s)):
                         print(f"Unlocked PDF with password {i}")
+                        should_break = True
                         break
+
+                if should_break:
+                    break
 
         # If still locked, abort
         if self.is_pdf_locked(file) and file.password is None:
