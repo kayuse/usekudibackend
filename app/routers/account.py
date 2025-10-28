@@ -74,8 +74,21 @@ async def get_banks(db: Session = Depends(get_db)):
     banks = service.get_banks()
     if not banks:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No banks found")
-    
-    return [BankOut(bank_id=bank.id, bank_name=bank.bank_name, image_url=bank.image_url, bank_account_type=bank.bank_account_type, bank_code=bank.bank_code, institution_id=bank.institution_id) for bank in banks]
+
+    return [BankOut(bank_id=bank.id, bank_name=bank.bank_name, image_url=bank.image_url,
+                    bank_account_type=bank.bank_account_type, bank_code=bank.bank_code,
+                    institution_id=bank.institution_id) for bank in banks]
+
+
+@router.post("/bank/add-multiple", response_model=List[BankOut], status_code=status.HTTP_200_OK)
+def add_multiple_banks(data: List[BankCreateMultiple], db: Session = Depends(get_db)):
+    try:
+        service = AccountService(db_session=db)
+        banks = service.add_multiple_banks(data)
+        return banks
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 
 @router.post("/initiate-sync/{id}", response_model=AccountMonoData, status_code=status.HTTP_200_OK)
 async def initiate_sync(id: int, user: UserOut = Depends(decode_user), db: Session = Depends(get_db)):
