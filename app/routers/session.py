@@ -7,12 +7,14 @@ from websocket import WebSocket
 
 from app.data.account import TransactionOut, TransactionSearch, TransactionCategoryOut, BudgetCreate, BudgetOut, \
     TransactionWeekCategoryOut, WeeklyTrend
+from app.data.mail import EmailTemplateData
 from app.data.session import SessionCreate, SessionOut, AccountExchangeSessionCreate, SessionAccountOut, IncomeFlowOut, \
     SessionInsightOut, SessionSwotOut, SpendingProfileOut, FinancialProfileDataIn, SessionSavingsPotentialOut, \
     SessionBeneficiaryOut, SessionTransactionOut
 from app.data.user import UserOut
 from app.database.index import decode_user, get_db
 from app.services.budget_service import BudgetService
+from app.services.email_services import EmailService
 from app.services.session_advice_service import SessionAdviceService
 from app.services.session_payment_service import SessionPaymentService
 from app.workers.session_tasks import analyze_transactions, analyze_payments
@@ -228,4 +230,3 @@ def verify_payment(session_id: str, reference: str, db: Session = Depends(get_db
     except Exception as e:
         print(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, )
-

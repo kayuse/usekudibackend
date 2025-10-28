@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UseKudi Email Notification</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f6f7fb;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      color: #333333;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+    }
+
+    .header {
+      background-color: #2d864a;
+      color: #ffffff;
+      text-align: center;
+      padding: 32px 20px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .header p {
+      margin: 8px 0 0;
+      font-size: 14px;
+      color: #e6f3e9;
+    }
+
+    .content {
+      padding: 28px 24px;
+    }
+
+    .content h2 {
+      color: #2d864a;
+      font-size: 18px;
+      margin-top: 0;
+    }
+
+    .content p {
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 0 0 16px;
+      color: #404040;
+    }
+
+    .cta {
+      text-align: center;
+      margin-top: 30px;
+    }
+
+    .cta a {
+      display: inline-block;
+      background-color: #2d864a;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: background-color 0.3s ease;
+    }
+
+    .cta a:hover {
+      background-color: #256f3e;
+    }
+
+    .footer {
+      background-color: #111827;
+      color: #d1d5db;
+      text-align: center;
+      font-size: 13px;
+      padding: 20px;
+    }
+
+    .footer a {
+      color: #2d864a;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    @media only screen and (max-width: 480px) {
+      .content {
+        padding: 20px;
+      }
+      .cta a {
+        padding: 12px 20px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <table role="presentation">
+    <tr>
+      <td style="padding: 24px 12px;">
+        <table class="container" role="presentation">
+          <tr>
+            <td class="header">
+              <h1>UseKudi</h1>
+              <p>Smarter financial insights — powered by AI</p>
+            </td>
+          </tr>
+          <tr>
+            <td class="content">
+              <h2>Hello {{name}},</h2>
+              <p>
+                Your latest analysis is ready! UseKudi has processed your uploaded bank statement and generated detailed insights into your
+                spending, income, and anomalies.
+              </p>
+
+              <p>
+                Click the button below to explore your personalized dashboard and uncover trends in your financial behavior.
+              </p>
+
+              <div class="cta">
+                <a href="{{url}}" target="_blank" rel="noopener">
+                  View Analysis
+                </a>
+              </div>
+
+              <p style="margin-top: 24px;">
+                This report includes a snapshot of inflow/outflow ratios, top merchants, and spending categories. You can also download the data for deeper analysis.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td class="footer">
+              <p>Naira Lens · Financial Analysis Assistant</p>
+              <p><a href="mailto:support@usekudi.com">support@usekudi.com</a></p>
+              <p>© 2025 UseKudi. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

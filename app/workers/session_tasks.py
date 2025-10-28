@@ -4,12 +4,20 @@ from typing import List
 
 from celery import shared_task
 import traceback
+
+from app.data.mail import EmailTemplateData
 from app.data.session import SessionAccountOut
 from app.database.index import get_db
 from app.models.session import SessionAccount, Session, SessionFile, SessionTransaction
+from app.services.email_services import EmailService
 from app.services.session_advice_service import SessionAdviceService
 from app.services.session_ai_service import SessionAIService
 from app.services.session_transaction_service import SessionTransactionService
+from dotenv import load_dotenv
+import os
+
+load_dotenv(override=True)
+base_url = os.getenv("APP_BASE_URL")
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)
@@ -72,6 +80,17 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
         analyze_transactions(session_record.identifier)
         session_record.processing_status = "done"
         db.commit()
+        email_service = EmailService()
+        data = EmailTemplateData(
+            to_email=session_record.email,
+            template_name="session_ready_email.html",
+            subject="Your Session is Ready",
+            context={
+                "name": session_record.name,
+                "url": f"{base_url}/dashboard/{session_record.identifier}"
+            }
+        )
+        email_service.send_templated_email(data)
         return True
     except Exception as e:
         print(e)
@@ -137,7 +156,6 @@ async def analyze_run_payments(session_id: str):
     except Exception as e:
         print(e)
         traceback.print_exc()
-
 
 # @shared_task
 # def process_chat(session_id: str, socket_id: str, text: str):
