@@ -110,7 +110,7 @@ class SessionAdviceService:
         transactions: List[SessionTransaction] = self.db.query(SessionTransaction).filter(
             SessionTransaction.account_id.in_(account_ids)).all()
         if len(transactions) == 0:
-            return False
+            return []
         for tx in transactions:
             records.append({
                 "transaction_type": tx.transaction_type,

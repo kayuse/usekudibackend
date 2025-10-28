@@ -210,7 +210,7 @@ class SessionTransactionService:
             raise ValueError(f"Session with ID {session_id} not found.")
         session_accounts = self.db.query(SessionAccount).filter(SessionAccount.session_id == session.id).all()
         account_ids = [a.id for a in session_accounts]
-
+        closing_balance = sum(a.current_balance for a in session_accounts)
         transactions = self.db.query(SessionTransaction).filter(SessionTransaction.account_id.in_(account_ids)).all()
         print(f"Found {len(transactions)} transactions to get income flow.")
         inflows = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
@@ -218,8 +218,6 @@ class SessionTransactionService:
         outflows = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'debit')
 
         net_income = inflows - outflows
-
-        closing_balance = sum(a.current_balance for a in session_accounts)
 
         return IncomeFlowOut(
             net_income=net_income,
@@ -280,38 +278,45 @@ class SessionTransactionService:
         return data
 
     def get_risk_data(self, session_id: str) -> RiskOut:
-        print(f"Getting risk data for: {session_id}")
-        transaction_data = self.get_transactions_from_sessions(session_id)
+        try:
+            print(f"Getting risk data for: {session_id}")
+            transaction_data = self.get_transactions_from_sessions(session_id)
+            print(f"Found {len(transaction_data.transactions)} transactions to get risk data.")
+            print(f"Found {len(transaction_data.accounts)} accounts to get risk data.")
+            session_accounts = transaction_data.accounts
+            transactions = transaction_data.transactions
+            if len(transactions) <= 0:
+                return RiskOut(volatility_risk=0, concentration_risk=0, expense_risk=0, liquidity_risk=0)
 
-        session_accounts = transaction_data.accounts
-        transactions = transaction_data.transactions
+            account_ids: list[int] = [a.id for a in session_accounts]
 
-        account_ids: list[int] = [a.id for a in session_accounts]
+            closing_balance = sum(a.current_balance for a in session_accounts)
 
-        closing_balance = sum(a.current_balance for a in session_accounts)
+            start_date = transactions[0].date
+            end_date = transactions[-1].date
 
-        start_date = transactions[0].date
-        end_date = transactions[-1].date
+            difference = end_date - start_date
 
-        difference = end_date - start_date
+            average_daily_outflow = self.get_income_flow(
+                session_id).outflow / difference.days if difference.days > 0 else 1
+            income_by_category = self.get_income_by_category(account_ids)
 
-        average_daily_outflow = self.get_income_flow(session_id).outflow / difference.days if difference.days > 0 else 1
-        income_by_category = self.get_income_by_category(account_ids)
+            liquidy_risk = float(closing_balance / average_daily_outflow)
+            print(f"Liquidity Risk data for {session_id} is: {liquidy_risk}")
 
-        liquidy_risk = float(closing_balance / average_daily_outflow)
-        print(f"Liquidity Risk data for {session_id} is: {liquidy_risk}")
+            concentration_risk = float(income_by_category[0].amount / sum(i.amount for i in income_by_category))
 
-        concentration_risk = float(income_by_category[0].amount / sum(i.amount for i in income_by_category))
+            expense_risk = self.calculate_expense_risk(transactions)
 
-        expense_risk = self.calculate_expense_risk(transactions)
+            volatility_risk = self.get_volatility_risk(transactions)
 
-        volatility_risk = self.get_volatility_risk(transactions)
-
-        return RiskOut(
-            volatility_risk=volatility_risk,
-            concentration_risk=concentration_risk,
-            expense_risk=expense_risk,
-            liquidity_risk=liquidy_risk)
+            return RiskOut(
+                volatility_risk=volatility_risk,
+                concentration_risk=concentration_risk,
+                expense_risk=expense_risk,
+                liquidity_risk=liquidy_risk)
+        except Exception as e:
+            print(e)
 
     def get_income_by_category(self, account_ids: list[int]) -> list[TransactionCategoryOut]:
         stmt = (
@@ -550,7 +555,8 @@ class SessionTransactionService:
 
         transaction_amounts = [transaction.amount for transaction in transactions if
                                transaction.transaction_type.strip().lower() == 'debit']
-
+        if len(transaction_amounts) == 0:
+            return 0.0
         sd_spending = float(np.std(transaction_amounts))
         average_spending: float = stats.mean(transaction_amounts)
         if average_spending == 0:
@@ -564,11 +570,13 @@ class SessionTransactionService:
 
     def calculate_financial_position(self, session_id: str) -> FinancialProfileDataIn:
         income_flow = self.get_income_flow(session_id)
+        print("Income Flow is: {}".format(income_flow))
         spending_profile = SpendingProfileOut(
             spending_ratio=self.get_spending_ratio(session_id),
             savings_ratio=self.get_savings_ratio(session_id),
             budget_conscious=self.budget_conscious_ration(session_id)
         )
+        print("Spending Profile is: {}".format(spending_profile))
         transactions = self.get_transactions_from_sessions(session_id)
         print("Done with transactions to get transactions from sessions.")
         account_ids = [account.id for account in transactions.accounts]
