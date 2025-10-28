@@ -13,7 +13,7 @@ from app.services import cache_service
 from app.services.mono_service import MonoService
 from app.workers.transaction_tasks import fetch_initial_transactions, sync_account_transactions
 from app.data.account import AccountCreate, AccountCreateOut, AccountExchangeCreate, AccountExchangeOut, \
-    AccountLinkData, AccountOut, BankOut
+    AccountLinkData, AccountOut, BankOut, BankCreate, BankCreateMultiple
 from app.data.user import UserOut
 from sqlalchemy.orm import Session
 from app.models.account import Account, Bank, FetchMethod, Transaction
@@ -82,7 +82,7 @@ class AccountService:
         )
 
     def get_banks(self) -> List[Bank]:
-        return self.db.query(Bank).where(Bank.active == True).all()
+        return self.db.query(Bank).where(Bank.active == True).order_by(Bank.bank_name.asc()).all()
 
     def refresh_balance(self, id: str) -> AccountOut:
         account = self.db.query(Account).filter(Account.id == id).first()
@@ -304,7 +304,6 @@ class AccountService:
                 scope='auth'
             )
 
-
             response = self.mono_service.initiate_account_linking(data)
             print(response)
             if response.status != "successful":
@@ -441,3 +440,31 @@ class AccountService:
 
         session_data = json.loads(session_data)
         return session_data
+
+    def add_multiple_banks(self, data: List[BankCreateMultiple]) -> List[BankOut]:
+        try:
+            banks = []
+            for bank_data in data:
+                existing_bank = self.db.query(Bank).filter(
+                    Bank.bank_code == bank_data.bankCode
+                ).first()
+                if existing_bank:
+                    continue  # Skip adding if bank already exists
+
+                bank = Bank(
+                    bank_name=bank_data.bankName,
+                    bank_code=bank_data.bankCode, )
+                self.db.add(bank)
+                self.db.commit()
+                self.db.refresh(bank)
+                banks.append(BankOut(
+                    bank_id=bank.id,
+                    bank_name=bank.bank_name,
+                    image_url=bank.image_url,
+                    bank_account_type=bank.bank_account_type,
+                    bank_code=bank.bank_code,
+                    institution_id=bank.institution_id
+                ))
+            return banks
+        except Exception as e:
+            raise ValueError(f"Error adding banks: {str(e)}")

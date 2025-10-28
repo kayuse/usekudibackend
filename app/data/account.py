@@ -47,6 +47,9 @@ class BankCreate(BaseModel):
     bank_name: str
     bank_code: str
 
+class BankCreateMultiple(BaseModel):
+    bankName:str
+    bankCode:str
 
 class CategoryOut(BaseModel):
     id: int

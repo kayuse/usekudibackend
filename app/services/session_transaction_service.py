@@ -233,6 +233,8 @@ class SessionTransactionService:
         transactions = transaction_data.transactions
         expenses = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'debit')
         income = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
+        if income <= 0:
+            income = 1
         ratio = (expenses / income) * 100
         return min(ratio, 200.0)
 
@@ -241,6 +243,8 @@ class SessionTransactionService:
         transactions = transaction_data.transactions
         savings = sum(t.amount for t in transactions if t.category_id == self.savings_category_id)
         income = sum(t.amount for t in transactions if t.transaction_type.strip().lower() == 'credit')
+        if income <= 0:
+            income = 1
         ratio = (savings / income) * 100
         return min(ratio, 100.0)
 

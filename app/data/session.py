@@ -66,9 +66,9 @@ class SessionTransactionOut(BaseModel):
     id: int
     amount: float
     account_id: int
-    category_id: int
+    category_id: Optional[int] = None
     session_account: SessionAccountOut
-    category: CategoryOut
+    category: Optional[CategoryOut] = None
     transaction_id: str
     date: datetime
     transaction_type: str
