@@ -84,7 +84,7 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
         data = EmailTemplateData(
             to_email=session_record.email,
             template_name="session_ready_email.html",
-            subject="Your Session is Ready",
+            subject="Your Report is Ready",
             context={
                 "name": session_record.name,
                 "url": f"{base_url}/dashboard/{session_record.identifier}"
