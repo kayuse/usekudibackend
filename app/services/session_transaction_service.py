@@ -518,7 +518,11 @@ class SessionTransactionService:
         risk_score_sum = 0
 
         weights = [expense[3] for expense in week_expenses]
-        normalized_weights = [w / sum(weights) for w in weights]
+        total_weight = sum(weights)
+        if total_weight == 0:
+            total_weight = 1
+
+        normalized_weights = [w / total_weight for w in weights]
         for index, expense in enumerate(week_expenses):
 
             if index <= 0:
