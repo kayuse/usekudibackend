@@ -206,24 +206,25 @@ class SessionTransactionService:
     def convert_transaction_currency_if_needed(self, accounts: List[SessionAccountOut]) -> str:
         default_currency = accounts[0].currency if accounts and accounts[0].currency else 'USD'
         should_convert = False
-        for account in accounts:
-            if account.currency != default_currency:
+        for account_out in accounts:
+            if account_out.currency != default_currency:
                 default_currency = 'USD'
                 should_convert = True
 
         if not should_convert:
             return default_currency
 
-        for account in accounts:
+        for account_out in accounts:
 
-            if account.currency == 'USD':
+            if account_out.currency == 'USD':
                 continue
-            account.balance = self.convert_amount(account.balance, account.currency, 'USD')
+            account = self.db.query(SessionAccount).filter(SessionAccount.id == account_out.id).first()
+            account.current_balance = self.convert_amount(account_out.current_balance, account_out.currency, 'USD')
             account.currency = 'USD'
             transactions = self.db.query(SessionTransaction).filter(
-                SessionTransaction.account_id.in_([account.id])).all()
+                SessionTransaction.account_id.in_([account_out.id])).all()
             for transaction in transactions:
-                transaction.amount = self.convert_amount(transaction.amount, account.currency, 'USD')
+                transaction.amount = self.convert_amount(transaction.amount, account_out.currency, 'USD')
                 transaction.currency = 'USD'
             self.db.commit()
 

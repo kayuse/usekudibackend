@@ -305,6 +305,8 @@ class SessionAIService:
                         Income Categories: {income_categories}
                         Spending Categories: {spending_categories}
                         
+                        The Session Currency is {session_currency}
+                        
                         Additional (optional): include a short time series of past weekly or monthly totals if available:
                         
                         TASK:
@@ -343,6 +345,7 @@ class SessionAIService:
         response = chain.invoke({
             "inflow": data_in.income_flow.inflow, "outflow": data_in.income_flow.outflow,
             "closing_balance": data_in.income_flow.closing_balance,
+            "session_currency": session.currency_code,
             "net_income": data_in.income_flow.net_income,
             "liquidity_risk": data_in.risk.liquidity_risk,
             "concentration_risk": data_in.risk.concentration_risk,
@@ -411,6 +414,8 @@ class SessionAIService:
 
                     {spending_categories} 
                     
+                    Here is the Currency for this Session: {session_currency}
+                    
                     Your Task  
                     
                     Using all this data, generate a SWOT analysis that highlights:  
@@ -439,6 +444,7 @@ class SessionAIService:
         response = chain.invoke({"inflow": data_in.income_flow.inflow, "outflow": data_in.income_flow.outflow,
                                  "closing_balance": data_in.income_flow.closing_balance,
                                  "net_income": data_in.income_flow.net_income,
+                                 "session_currency": session.currency_code,
                                  "liquidity_risk": data_in.risk.liquidity_risk,
                                  "concentration_risk": data_in.risk.concentration_risk,
                                  "expense_risk": data_in.risk.expense_risk,
@@ -598,6 +604,8 @@ class SessionAIService:
                         Customer Type:
                         {customer_type}
                         
+                        Here is the Currency for this Session: {session_currency}
+                        
                         TASK:
                         Using all the inputs above, produce an overall assessment that:
                         1. Summarizes the customer’s financial personality and key strengths/weaknesses.
@@ -618,7 +626,15 @@ class SessionAIService:
                         - Use consistent currency and avoid technical jargon.
                         - Be specific, not generic (“Spending increased by 12% over 3 months” instead of “Spending went up”).
                         - Never include formatting, markdown, or additional commentary.
+                        - Predictions should be cautious and based only on the provided insights and observed trends — not speculative.
                         
+                        Recommendations must reflect the customer type context:
+                        - Individual: focus on budgeting, saving, and lifestyle adjustments.
+                        - Business: focus on cash flow, expense control, and reinvestment.
+                        - Church/NGO: focus on transparency, donation management, and sustainability.
+                        
+                        Tone should remain confident, factual, and empathetic — similar to what a certified financial advisor would use in a one-on-one session.
+
                         {format_instructions}
 
                      """)
@@ -626,6 +642,7 @@ class SessionAIService:
         llm = ChatOpenAI(temperature=0, model="gpt-4o-mini", max_tokens=1000, api_key=self.ai_key)
         chain = LLMChain(llm=llm, prompt=prompt_template, output_parser=parser)
         response = chain.invoke({"insights": insights, "swot": swot_insight,
+                                 "session_currency": session.currency_code,
                                  "savings_potential": savings_potential,
                                  "customer_type": session.customer_type})
 

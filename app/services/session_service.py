@@ -108,7 +108,7 @@ class SessionService:
             self.db.query(SessionBeneficiary).filter(SessionBeneficiary.session_id == session_record.id).delete()
             self.db.commit()
             print("Deleted previous session data for retry.")
-            process_statements.delay(session_id, file_ids, bank_ids)
+            process_statements.delay(session_id, file_ids)
             return True
         except Exception as e:
             raise ValueError(f"Error retrying processing statements: {str(e)}")
