@@ -69,7 +69,6 @@ class SessionService:
             raise ValueError(f"Error establishing exchange: {str(e)}")
 
     async def process_statements(self, session_id: str, files: List[UploadFile],
-                                 bank_ids: List[int],
                                  ) -> bool:
         try:
             session_record = self.db.query(SessionModel).filter(SessionModel.identifier == session_id).first()
@@ -77,15 +76,14 @@ class SessionService:
             session_files: List[int] = []
             for index, file_path in enumerate(file_paths):
                 session_file = SessionFile(file_path=file_path,
-                                           session_id=session_record.id,
-                                           bank_id=bank_ids[index],
+                                           session_id=session_record.id, bank_id=None,
                                            password=None)
                 self.db.add(session_file)
                 self.db.commit()
                 self.db.refresh(session_file)
                 session_files.append(session_file.id)
 
-            process_statements.delay(session_id, session_files, bank_ids)
+            process_statements.delay(session_id, session_files)
             return True
         except Exception as e:
             raise ValueError(f"Error processing statements: {str(e)}")

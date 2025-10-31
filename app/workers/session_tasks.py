@@ -21,11 +21,11 @@ base_url = os.getenv("APP_BASE_URL")
 
 
 @shared_task(bind=True, max_retries=10, default_retry_delay=60)
-def process_statements(self, session_id: str, files_id: List[int], bank_ids: List[int]):
-    return asyncio.run(run_process_statements(session_id, files_id, bank_ids))
+def process_statements(self, session_id: str, files_id: List[int]):
+    return asyncio.run(run_process_statements(session_id, files_id))
 
 
-async def run_process_statements(session_id: str, files_id: List[int], bank_ids: List[int]):
+async def run_process_statements(session_id: str, files_id: List[int]):
     try:
         db = next(get_db())
         session_ai_service = SessionAIService(db)
@@ -40,24 +40,30 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
             print("Processing file {}".format(file_id))
             session_file = db.query(SessionFile).filter(SessionFile.id == file_id).first()
             statement = await session_ai_service.read_pdf_directly(session_file)
+            currency_data = None
+            
+            if statement.accountCurrency is not None:
+                currency_data = session_ai_service.get_currency_data(statement.accountCurrency)
+            
             if statement is None:
                 continue
-            bank_id = bank_ids[index]
-            print("Bank ID: {}".format(bank_id))
+            
             if statement.accountName is None:
                 statement.accountName = "Unnamed Account"
             if statement.accountCurrency is None:
                 statement.accountCurrency = "NGN"
             if statement.accountNumber is None:
                 statement.accountNumber = "0000000000"
+            if currency_data is not None:
+                statement.accountCurrency = currency_data.code
 
             account = SessionAccount(account_name=statement.accountName,
                                      account_number=statement.accountNumber,
                                      current_balance=statement.accountBalance,
                                      session_id=session_record.id,
                                      fetch_method='statement',
-                                     currency=statement.accountCurrency,
-                                     bank_id=bank_id)
+                                     currency=statement.accountCurrency)
+
             print("Added Session Account: {}".format(account))
             db.add(account)
             db.commit()
@@ -65,7 +71,10 @@ async def run_process_statements(session_id: str, files_id: List[int], bank_ids:
             session_transaction_service.process_transaction_statements(account.id, statement)
             session_accounts.append(SessionAccountOut.model_validate(account))
 
+        conversion_currency = session_transaction_service.convert_transaction_currency_if_needed(session_accounts)
+        print("Conversion Result: {}".format(conversion_currency))
         session_record.processing_status = "categorizing"
+        session_record.currency_code = conversion_currency
         db.commit()
 
         category_response = await session_transaction_service.categorize_session_transactions(session_record.id)

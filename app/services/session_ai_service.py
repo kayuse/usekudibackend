@@ -17,12 +17,12 @@ from pdfminer.pdfdocument import PDFPasswordIncorrect, PDFException
 from pdfplumber.utils.exceptions import PdfminerException
 from sqlalchemy.orm import Session
 import pikepdf
-from app.data.session import Statement, BankData, FinancialProfileDataIn, SessionTransactionOut
+from app.data.session import CurrencyCodeData, CurrencyOut, Statement, BankData, FinancialProfileDataIn, SessionTransactionOut
 from app.data.transaction_insight import Insights, Insight, TransactionSWOTInsight, SavingsPotentials, SavingsPotential, \
     OverallAssessment
 from app.models.session import Session as SessionModel, SessionInsight, SessionSwot, SessionSavingsPotential, \
     SessionFile
-from app.models.account import Bank
+from app.models.account import Bank, Currency
 import os
 
 from app.models.session import SessionTransaction
@@ -134,6 +134,37 @@ class SessionAIService:
 
         return final_statement
 
+    def get_currency_data(self, currency_name: str) -> Optional[CurrencyCodeData]:
+        currencies = self.db.query(Currency).all()
+        currency_list = [CurrencyOut.model_validate(c) for c in currencies]
+        parser = PydanticOutputParser(pydantic_object=CurrencyCodeData)
+        template = """
+            You are given a target currency and a list of currencies with their codes.
+            Currency name: {currency_name}
+
+            Currency list:
+            {currency_list}
+
+            Return the code and the ID of the currency that matches the currency name.
+            Pick the most likely match.
+            If no match is found, return "None" as code and 0 as id.
+            Format your response as JSON with the following structure:
+            {format_instructions}
+        """
+
+        prompt = PromptTemplate.from_template(template)
+        final_prompt = prompt.format(
+            currency_name=currency_name, currency_list=currency_list,
+            format_instructions=parser.get_format_instructions()
+        )
+        llm = ChatOpenAI(model='gpt-4o-mini', temperature=0, api_key=self.ai_key)
+        result = llm.invoke(final_prompt)
+        data: CurrencyCodeData = parser.parse(result.content)
+
+        print("Currency Data: {}".format(data))
+        return data
+    
+    
     async def read_pdf_directly(self, file) -> Optional[Statement]:
         # 🔐 Try brute-forcing the password if locked
         if self.is_pdf_locked(file) and file.password is None:

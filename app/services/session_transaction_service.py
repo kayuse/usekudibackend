@@ -1,4 +1,5 @@
 import asyncio
+from typing import List
 
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ import statistics as stats
 from app.data.account import TransactionCategoryOut, TransactionWeekCategoryOut, WeeklyTrend
 from app.data.session import Statement, IncomeFlowOut, IncomeCategoryOut, RiskOut, TransactionDataOut, \
     FinancialProfileDataIn, SpendingProfileOut, SessionTransactionOut, SessionAccountOut, SessionBeneficiaryOut
-from app.models.account import Category, Account
+from app.models.account import Category, Account, CurrencyExchangeRate, Currency
 from app.models.session import SessionAccount, SessionTransaction, Session as SessionModel, SessionBeneficiary
 
 from app.services.ai_service import AIService
@@ -201,6 +202,48 @@ class SessionTransactionService:
 
         self.db.commit()
         return True
+
+    def convert_transaction_currency_if_needed(self, accounts: List[SessionAccountOut]) -> str:
+        default_currency = accounts[0].currency if accounts and accounts[0].currency else 'USD'
+        should_convert = False
+        for account in accounts:
+            if account.currency != default_currency:
+                default_currency = 'USD'
+                should_convert = True
+
+        if not should_convert:
+            return default_currency
+
+        for account in accounts:
+
+            if account.currency == 'USD':
+                continue
+            account.balance = self.convert_amount(account.balance, account.currency, 'USD')
+            account.currency = 'USD'
+            transactions = self.db.query(SessionTransaction).filter(
+                SessionTransaction.account_id.in_([account.id])).all()
+            for transaction in transactions:
+                transaction.amount = self.convert_amount(transaction.amount, account.currency, 'USD')
+                transaction.currency = 'USD'
+            self.db.commit()
+
+        return default_currency
+
+    def convert_amount(self, amount: float, from_currency: str, to_currency: str) -> float:
+        from_currency_id = self.db.query(Currency).filter(Currency.code == from_currency).first().id
+        to_currency_id = self.db.query(Currency).filter(Currency.code == to_currency).first().id
+        print(f"Converting {amount} from {from_currency} {from_currency_id} to {to_currency} {to_currency_id}")
+
+        conversion_rate = self.db.query(CurrencyExchangeRate).filter(
+            CurrencyExchangeRate.from_currency_id == to_currency_id,
+            CurrencyExchangeRate.to_currency_id == from_currency_id,
+        ).first().exchange_rate
+        if conversion_rate is None:
+            return amount
+        print(f"Conversion rate: {conversion_rate}")
+        converted_amount = float(amount / conversion_rate)
+        print(f"Converted amount: {converted_amount}")
+        return converted_amount
 
     def get_income_flow(self, session_id: str) -> IncomeFlowOut:
 

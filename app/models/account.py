@@ -130,4 +130,29 @@ class TransactionInsight(Base):
 User.transaction_insights = relationship("TransactionInsight", back_populates="user")
 TransactionInsight.user = relationship("User", back_populates="transaction_insights")
 
+class Currency(Base):
+    __tablename__ = "currencies"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    country = Column(String(200), nullable=False)
+
+    def __repr__(self):
+        return f"<Currency(id={self.id}, code='{self.code}', name='{self.name}', symbol='{self.symbol}')>"
+
+
+class CurrencyExchangeRate(Base):
+    __tablename__ = "currency_exchange_rates"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    from_currency_id = Column(Integer, ForeignKey("currencies.id"), nullable=False)
+    to_currency_id = Column(Integer, ForeignKey("currencies.id"), nullable=False)
+    exchange_rate = Column(Float, nullable=False)
+    last_updated = Column(DateTime, default=func.now(), onupdate=func.now())
+    from_currency = relationship("Currency", foreign_keys=[from_currency_id])
+    to_currency = relationship("Currency", foreign_keys=[to_currency_id])
+
+    def __repr__(self):
+        return f"<CurrencyExchangeRate(id={self.id}, from_currency_id={self.from_currency_id}, to_currency_id={self.to_currency_id}, exchange_rate={self.exchange_rate})>"
+
+
 

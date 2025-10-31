@@ -25,3 +25,18 @@ def auto_fetch_transactions(self):
         db.close()
 
 
+
+@celery_app.task(name='get_latest_currency', bind=True, max_retries=5, default_retry_delay=300)
+def get_latest_currency(self):
+    print("Running get latest currency...")
+    try:
+        db = next(get_db())
+        print(f"Database session: {db}")
+        service = AccountService(db_session=db)
+        latest_currency = service.get_latest_currency()
+        print("Latest currency fetched successfully.", latest_currency)
+    except Exception as e:
+        print(f"Error during get latest currency: {e}")
+        self.retry(exc=e, countdown=60)
+    finally:
+        db.close()  

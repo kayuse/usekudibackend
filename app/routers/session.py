@@ -39,12 +39,11 @@ def start(data: SessionCreate, db: Session = Depends(get_db)):
 
 @router.post("/process/statements")
 async def upload_file(files: list[UploadFile] = File(...),
-                      bank_ids: List[int] = Form(...),
                       session_id: str = Form(...),
                       db: Session = Depends(get_db)):
     try:
         service = SessionService(db=db)
-        result = await service.process_statements(session_id, files, bank_ids)
+        result = await service.process_statements(session_id, files)
         return {"result": result}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

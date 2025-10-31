@@ -5,7 +5,7 @@ from .transaction_insight_tasks import auto_generate_insights
 
 from .transaction_tasks import fetch_initial_transactions, auto_classify_transactions, sync_account_transactions, \
     generate_transaction_embeddings, auto_classify_session_transactions, fetch_session_transactions
-from .account_tasks import auto_fetch_transactions
+from .account_tasks import auto_fetch_transactions, get_latest_currency
 
 __all__ = [
     'celery_app',
@@ -13,6 +13,7 @@ __all__ = [
     'fetch_session_transactions',
     # 'auto_classify_transactions',
     'auto_classify_session_transactions',
+    'get_latest_currency',
     # 'generate_transaction_embeddings',
     'auto_generate_insights',
     'process_statements',

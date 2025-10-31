@@ -18,6 +18,7 @@ class SessionOut(BaseModel):
     name: str
     identifier: str
     email: str
+    currency_code : Optional[str]
     customer_type: Optional[str]
     processing_status: str
     paid: Optional[bool]
@@ -51,7 +52,7 @@ class SessionSwotOut(BaseModel):
 class SessionAccountOut(BaseModel):
     id: int
     account_name: str
-    bank_id: int
+    bank_id: Optional[int]
     account_number: str
     session_id: int
     current_balance: float
@@ -197,3 +198,17 @@ class SessionPaymentResponse(BaseModel):
     status: bool
     message: str
     data: SessionPaymentData
+
+class CurrencyCodeData(BaseModel):
+    id: int = Field(..., description="Currency ID")
+    code: str = Field(..., description="Currency Code")
+
+class CurrencyOut(BaseModel):
+    id: int
+    name: str
+    code: str
+
+    model_config = {
+        "from_attributes": True
+    }
+    

@@ -16,6 +16,7 @@ class Session(Base):
     processing_status = Column(String, nullable=True)
     indexed = Column(Boolean, nullable=True, default=False)
     customer_type = Column(String(50), nullable=True, default='individual')
+    currency_code = Column(String(10), nullable=True, default='USD')
     overall_assessment = Column(String, nullable=True)
     overall_assessment_title = Column(String, nullable=True)
     paid = Column(Boolean, nullable=True, default=False)
@@ -26,7 +27,7 @@ class SessionAccount(Base):
     __tablename__ = 'session_accounts'
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_name = Column(String(100), nullable=False)
-    bank_id = Column(Integer, ForeignKey("banks.id"), nullable=False)
+    bank_id = Column(Integer, ForeignKey("banks.id"), nullable=True)
     account_number = Column(String(50), nullable=False, unique=False)
     active = Column(Boolean, nullable=False, default=False)  # 1 for active, 0 for inactive
     account_type = Column(String, nullable=True, default=0.0)
@@ -34,7 +35,7 @@ class SessionAccount(Base):
                         unique=False)  # Mono account ID, can be null if not applicable
     current_balance = Column(Float, nullable=False, default=0.0)
     indexed = Column(Boolean, nullable=True, default=False)  # Indicates if the account has been indexed
-    currency = Column(String(10), nullable=False, default="NGN")
+    currency = Column(String(10), nullable=True)
     fetch_method = Column(String(10), nullable=False, default="api")
     bank = relationship("Bank", foreign_keys=[bank_id])
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)  # Assuming a User model exists
@@ -56,7 +57,7 @@ class SessionTransaction(Base):
     account_id = Column(Integer, ForeignKey("session_accounts.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)  # Optional category for the transaction
     transaction_id = Column(String(200), nullable=False, unique=False, default='')  # Mono transaction ID
-    currency = Column(String(10), nullable=False, default="NGN")
+    currency = Column(String(10), nullable=False, default="USD")
     date = Column(DateTime, nullable=False, default=func.now())  # Transaction date
     balance_after_transaction = Column(Float, nullable=False, default=0.0)  # Balance after the transaction
     amount = Column(Float, nullable=False)

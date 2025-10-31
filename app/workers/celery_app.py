@@ -18,10 +18,10 @@ celery_app = Celery(
 celery_app.conf.timezone = 'Africa/Lagos'
 
 celery_app.conf.beat_schedule = {
-    # 'auto-classify-transactions-every-10-mins': {
-    #     'task': 'auto_classify_transactions',
-    #     'schedule': crontab(minute='*/10'),  # every 10 mins
-    # },
+    'auto-fetch-currency-exchange-rates': {
+        'task': 'get_latest_currency',
+        'schedule': crontab(hour='*/48'),  # every 48 hours
+    },
     # 'auto_classify_session_transactions-every-10-mins': {
     #     'task': 'auto_classify_session_transactions',
     #     'schedule': crontab(minute='*/20'),  # every 10 mins

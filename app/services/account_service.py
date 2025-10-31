@@ -16,7 +16,7 @@ from app.data.account import AccountCreate, AccountCreateOut, AccountExchangeCre
     AccountLinkData, AccountOut, BankOut, BankCreate, BankCreateMultiple
 from app.data.user import UserOut
 from sqlalchemy.orm import Session
-from app.models.account import Account, Bank, FetchMethod, Transaction
+from app.models.account import Account, Bank, Currency, CurrencyExchangeRate, FetchMethod, Transaction
 
 
 class AccountService:
@@ -26,6 +26,7 @@ class AccountService:
         self.mono_api_key = os.getenv('MONO_API_KEY')
         self.mono_api_secret = os.getenv('MONO_API_SECRET')
         self.mono_api_base_url = os.getenv('MONO_API_BASE_URL')
+        self.currency_exchange_api = os.getenv('CURRENCY_EXCHANGE_API')
         self.mono_service = MonoService()
         self.accounts = {}  # account_id -> Account
 
@@ -468,3 +469,40 @@ class AccountService:
             return banks
         except Exception as e:
             raise ValueError(f"Error adding banks: {str(e)}")
+
+    def get_latest_currency(self) -> bool:
+        try:
+        # fetch the latest currency exchange rate from the currency exchange API above
+            response = requests.get(self.currency_exchange_api)
+            if response.status_code != 200:
+                raise ValueError("Failed to fetch currency exchange rates.")
+            data = response.json()
+            rates = data['conversion_rates']
+            for currency, conversion_value in rates.items():
+                # check if the currency exchange rate already exists
+                from_currency = self.db.query(Currency).filter(Currency.code == data['base_code']).first()
+                to_currency = self.db.query(Currency).filter(Currency.code == currency).first()
+                if not from_currency or not to_currency:
+                    continue  # skip if either currency is not found
+                existing_rate = self.db.query(CurrencyExchangeRate).filter(
+                    CurrencyExchangeRate.from_currency_id == from_currency.id,
+                    CurrencyExchangeRate.to_currency_id == to_currency.id
+                ).first()
+                if existing_rate:
+                    existing_rate.exchange_rate = conversion_value
+                    existing_rate.last_updated = datetime.now()
+                    self.db.commit()
+                    self.db.refresh(existing_rate)
+                else:
+                    new_rate = CurrencyExchangeRate(
+                        from_currency_id=from_currency.id,
+                        to_currency_id=to_currency.id,
+                        exchange_rate=conversion_value
+                    )
+                    self.db.add(new_rate)
+                    self.db.commit()
+                    self.db.refresh(new_rate)
+            return True
+        except Exception as e:
+            print(f"Error fetching latest currency exchange rates: {str(e)}")
+            return False
